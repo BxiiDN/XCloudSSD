@@ -1,6 +1,8 @@
 # Hasil pengujian
 
-## Pembaruan v1.2.0 — perbaikan install game (hasil CI diisi setelah run selesai)
+## Pembaruan v1.2.0 — perbaikan install game — run https://github.com/BxiiDN/XCloudSSD/actions/runs/42494295440 (sukses)
+
+* Unit test 40/40, integration test WinFsp 11/11, service smoke 1/1, installer + portable dibangun, install/uninstall senyap OK.
 
 * Respons TeraBox dengan charset tidak standar dibaca sebagai UTF-8 (sebelumnya: "The character set provided in
   ContentType is invalid").
