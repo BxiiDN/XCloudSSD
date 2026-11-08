@@ -122,10 +122,15 @@ public class TransferTests
         s.SetSize(100_000);
         s.SetSize(200_000);
         s.Commit(new CommitTarget(item.Id, null, null, 0, DateTimeOffset.UtcNow), CancellationToken.None);
+        // The extended part was never written, so it stays sparse: 100 000 bytes stored, 200 000 bytes logical.
         var result = p.ContentAt("t.bin")!;
-        Assert.Equal(200_000, result.Length);
-        Assert.True(result.AsSpan(0, 100_000).SequenceEqual(data.AsSpan(0, 100_000)));
-        Assert.All(result.Skip(100_000), x => Assert.Equal(0, x));
+        Assert.Equal(100_000, result.Length);
+        Assert.Equal(200_000, p.LogicalSizeAt("t.bin"));
+        Assert.True(result.AsSpan().SequenceEqual(data.AsSpan(0, 100_000)));
+        var reader = new WriteSession(p, b, c, new WriteOptions(1 << 20, 8L << 20), item.Id, null, 100_000, 200_000);
+        var tail = new byte[100_000];
+        Assert.Equal(100_000, reader.Read(100_000, tail, null, CancellationToken.None));
+        Assert.All(tail, x => Assert.Equal(0, x));
     }
 
     [Fact]
@@ -134,7 +139,7 @@ public class TransferTests
         var (p, b, c) = Setup(32L << 20);
         var s = new WriteSession(p, b, c, new WriteOptions(1 << 20, 2L << 20), null, null, 0);
         s.BindStreamTarget(new CommitTarget(null, p.RootId, "x.bin", 0, DateTimeOffset.UtcNow));
-        var block = new byte[1 << 20];
+        var block = Rand(1 << 20, 21); // real data (all-zero writes stay sparse and are never streamed)
         for (var i = 0; i < 8; i++) s.Write((long)i << 20, block, CancellationToken.None);
         Assert.True(s.StreamedBytes > 0);
         var ex = Assert.Throws<WriteSessionException>(() => s.Write(0, new byte[10], CancellationToken.None));
@@ -146,7 +151,7 @@ public class TransferTests
     {
         var (p, b, c) = Setup(4L << 20);
         var s = new WriteSession(p, b, c, new WriteOptions(1 << 20, 64L << 20), null, null, 0);
-        var block = new byte[WriteSession.PageSize];
+        var block = Rand(WriteSession.PageSize, 22);
         var ex = Assert.Throws<WriteSessionException>(() =>
         {
             // Backwards writes can never be streamed, so they must stay in RAM.

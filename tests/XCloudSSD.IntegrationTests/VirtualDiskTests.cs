@@ -203,7 +203,7 @@ public class VirtualDiskTests(ITestOutputHelper output)
     {
         using var disk = new TestDisk(TestDisk.FreeLetter(), "XCloudSSD OOO", 16L << 20);
         var path = Path.Combine(disk.Root, "reverse.bin");
-        var block = new byte[1 << 20];
+        var block = Rand(1 << 20, 31); // real data; all-zero writes would stay sparse and use no RAM
         var ex = Assert.ThrowsAny<IOException>(() =>
         {
             using var fs = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096, FileOptions.WriteThrough);
