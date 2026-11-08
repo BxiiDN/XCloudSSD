@@ -17,7 +17,7 @@ public static class WinFspInfo
             var dll = Path.Combine(dir, "bin", "winfsp-x64.dll");
             if (!File.Exists(dll)) return (false, null, dir);
             var v = FileVersionInfo.GetVersionInfo(dll);
-            return (true, v.ProductVersion ?? v.FileVersion, dir);
+            return (true, $"{v.FileMajorPart}.{v.FileMinorPart}.{v.FileBuildPart}", dir);
         }
         catch
         {

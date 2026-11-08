@@ -15,7 +15,7 @@ Windows I/O manager ──► WinFsp kernel driver (winfsp-x64.sys)
  │        ├─ MetadataTree   path → cloud id (lazy listing + change feed)   │
  │        ├─ ChunkReadCache range reads → RAM chunks (LRU, idle expiry)    │
  │        ├─ WriteSession   RAM pages + ordered resumable upload, MD5 check│
- │        └─ TransferTracker journal (SQLite) for the Transfer Manager     │
+ │        └─ TransferTracker journal (JSON store) for the Transfer Manager │
  │   MemoryBudget (one global RAM cap)  BandwidthThrottle (up/down)        │
  │   ControlPipeServer  ◄── named pipe ──►  XCloudSSD.exe (WPF UI)         │
  └─────────────────────────────────────────────────────────────────────────┘
@@ -31,7 +31,7 @@ Google Drive API v3   (TeraBox: not available, see LIMITATIONS.md)
 | `XCloudSSD.Core` | Kontrak provider (`ICloudProvider`, `IUploadSession`), model, `MemoryBudget`, `Metrics`, `BandwidthThrottle`, kontrak IPC + `PipeClient`, logger file |
 | `XCloudSSD.Security` | `SecretStore` — DPAPI (LocalMachine untuk service), satu file + entropy per akun, ACL folder SYSTEM/Administrators |
 | `XCloudSSD.Authentication` | OAuth 2.0 Google: PKCE + loopback (`127.0.0.1:port`), token exchange/refresh/revoke, refresh otomatis |
-| `XCloudSSD.Metadata` | `AppDatabase` (SQLite: akun, pengaturan, jurnal transfer), `MetadataTree`, `NameCodec` |
+| `XCloudSSD.Metadata` | `AppDatabase` (file JSON atomik: akun, pengaturan, jurnal transfer), `MetadataTree`, `NameCodec` |
 | `XCloudSSD.Cloud` | Retry/backoff, klasifikasi error jaringan |
 | `XCloudSSD.GoogleDrive` | REST Drive v3: list, range GET, resumable upload (308/Range resume), about/quota, changes, trash/delete, appProperties untuk atribut Windows |
 | `XCloudSSD.TeraBox` | Adapter jujur: melaporkan "tidak tersedia" (lihat LIMITATIONS) |
@@ -48,7 +48,7 @@ Google Drive API v3   (TeraBox: not available, see LIMITATIONS.md)
 * Satu `MemoryBudget` global membatasi seluruh RAM I/O (default 512 MB). Chunk baca dilepas LRU saat butuh ruang
   dan setelah 60 detik tidak dipakai. Jika budget penuh dan tidak ada yang bisa dibebaskan, operasi tulis
   **gagal dengan error** (`STATUS_INSUFFICIENT_RESOURCES`), tidak pernah diam-diam pindah ke disk.
-* Yang disimpan lokal: database SQLite kecil (akun, pengaturan, jurnal transfer — tanpa isi file), token
+* Yang disimpan lokal: database kecil berbentuk file JSON (akun, pengaturan, jurnal transfer — tanpa isi file), token
   terenkripsi DPAPI, dan log operasional (`%ProgramData%\XCloudSSD`).
 * Kapasitas volume = kuota provider (`about.storageQuota`), bukan ruang kosong C:.
 

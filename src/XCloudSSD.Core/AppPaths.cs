@@ -25,7 +25,7 @@ public static class AppPaths
         }
     }
 
-    public static string DatabaseFile => Path.Combine(DataRoot, "xcloudssd.db");
+    public static string StoreDir => Ensure(Path.Combine(DataRoot, "store"));
     public static string SecretsDir => Ensure(Path.Combine(DataRoot, "secrets"));
     public static string LogsDir => Ensure(Path.Combine(DataRoot, "logs"));
 

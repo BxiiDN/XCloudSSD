@@ -36,8 +36,6 @@ public sealed unsafe class CloudFileSystem : FileSystemBase, IDisposable
 {
     private const uint FileDirectoryFile = 0x00000001;
     private const uint AttrReadOnly = 0x1, AttrHidden = 0x2, AttrSystem = 0x4, AttrDirectory = 0x10, AttrArchive = 0x20, AttrNormal = 0x80;
-    private const uint CleanupDelete = 0x01;
-    private const uint CleanupSetLastWriteTime = 0x40;
     private const uint InvalidFileAttributes = 0xFFFFFFFF;
 
     private readonly ICloudProvider _provider;

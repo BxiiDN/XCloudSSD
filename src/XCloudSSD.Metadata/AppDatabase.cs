@@ -1,128 +1,93 @@
 using System.Text.Json;
-using Microsoft.Data.Sqlite;
+using System.Text.Json.Serialization;
 using XCloudSSD.Core;
 using XCloudSSD.Core.Ipc;
 
 namespace XCloudSSD.Metadata;
 
 /// <summary>
-/// Small local SQLite database: account configuration, settings and the transfer journal.
-/// It stores metadata only — never file content.
+/// Small local store: account configuration, settings, key/value state and the transfer journal.
+/// Stored as JSON files written atomically (temp file + replace). Holds metadata only — never file content.
+/// The transfer journal is flushed at most every two seconds so thousands of small files do not cause
+/// thousands of disk writes.
 /// </summary>
-public sealed class AppDatabase
+public sealed class AppDatabase : IDisposable
 {
-    private readonly string _cs;
-    private readonly object _lock = new();
+    private const int JournalLimit = 2000;
+    private static readonly JsonSerializerOptions Json = new()
+    {
+        WriteIndented = true,
+        Converters = { new JsonStringEnumConverter() },
+    };
 
+    private readonly string _dir;
+    private readonly object _lock = new();
+    private readonly List<AccountRecord> _accounts;
+    private readonly Dictionary<string, string> _values;
+    private readonly List<TransferDto> _transfers;
+    private long _nextTransferId;
+    private bool _journalDirty;
+    private readonly Timer _flushTimer;
+
+    /// <param name="path">Directory for the store, or a file path whose directory is used.</param>
     public AppDatabase(string path)
     {
-        _cs = new SqliteConnectionStringBuilder
-        {
-            DataSource = path,
-            Mode = SqliteOpenMode.ReadWriteCreate,
-            Cache = SqliteCacheMode.Shared,
-        }.ToString();
-        Migrate();
+        _dir = Path.HasExtension(path) ? Path.GetDirectoryName(Path.GetFullPath(path))! : path;
+        Directory.CreateDirectory(_dir);
+        _accounts = Read<List<AccountRecord>>("accounts.json") ?? new();
+        _values = Read<Dictionary<string, string>>("state.json") ?? new();
+        _transfers = Read<List<TransferDto>>("transfers.json") ?? new();
+        _nextTransferId = _transfers.Count == 0 ? 0 : _transfers.Max(t => t.Id);
+        _flushTimer = new Timer(_ => FlushJournal(), null, TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(2));
     }
 
-    private SqliteConnection Open()
+    private T? Read<T>(string name)
     {
-        var c = new SqliteConnection(_cs);
-        c.Open();
-        using var p = c.CreateCommand();
-        p.CommandText = "PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON;";
-        p.ExecuteNonQuery();
-        return c;
-    }
-
-    private void Migrate()
-    {
-        lock (_lock)
+        var file = Path.Combine(_dir, name);
+        try
         {
-            using var c = Open();
-            using var cmd = c.CreateCommand();
-            cmd.CommandText = """
-                CREATE TABLE IF NOT EXISTS schema_version (v INTEGER NOT NULL);
-                CREATE TABLE IF NOT EXISTS accounts (
-                    id TEXT PRIMARY KEY,
-                    provider INTEGER NOT NULL,
-                    label TEXT NOT NULL,
-                    display_name TEXT NOT NULL,
-                    email TEXT NOT NULL,
-                    drive_letter TEXT NOT NULL,
-                    enabled INTEGER NOT NULL,
-                    added_at TEXT NOT NULL
-                );
-                CREATE UNIQUE INDEX IF NOT EXISTS ux_accounts_letter ON accounts(drive_letter);
-                CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-                CREATE TABLE IF NOT EXISTS transfers (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    account_id TEXT NOT NULL,
-                    path TEXT NOT NULL,
-                    direction INTEGER NOT NULL,
-                    state INTEGER NOT NULL,
-                    bytes_done INTEGER NOT NULL,
-                    bytes_total INTEGER NOT NULL,
-                    attempts INTEGER NOT NULL,
-                    error TEXT,
-                    started TEXT NOT NULL,
-                    updated TEXT NOT NULL
-                );
-                CREATE INDEX IF NOT EXISTS ix_transfers_state ON transfers(state);
-                """;
-            cmd.ExecuteNonQuery();
+            return File.Exists(file) ? JsonSerializer.Deserialize<T>(File.ReadAllText(file), Json) : default;
         }
+        catch (JsonException)
+        {
+            // Keep the unreadable file for diagnosis and start fresh.
+            File.Copy(file, file + ".corrupt", overwrite: true);
+            return default;
+        }
+    }
+
+    private void Write<T>(string name, T value)
+    {
+        var file = Path.Combine(_dir, name);
+        var tmp = file + ".tmp";
+        using (var fs = new FileStream(tmp, FileMode.Create, FileAccess.Write, FileShare.None))
+        {
+            JsonSerializer.Serialize(fs, value, Json);
+            fs.Flush(flushToDisk: true);
+        }
+        File.Move(tmp, file, overwrite: true);
     }
 
     // ---------------- accounts ----------------
 
     public List<AccountRecord> GetAccounts()
     {
-        lock (_lock)
-        {
-            using var c = Open();
-            using var cmd = c.CreateCommand();
-            cmd.CommandText = "SELECT id, provider, label, display_name, email, drive_letter, enabled, added_at FROM accounts ORDER BY added_at";
-            using var r = cmd.ExecuteReader();
-            var list = new List<AccountRecord>();
-            while (r.Read())
-            {
-                list.Add(new AccountRecord
-                {
-                    Id = r.GetString(0),
-                    Provider = (ProviderKind)r.GetInt32(1),
-                    Label = r.GetString(2),
-                    DisplayName = r.GetString(3),
-                    Email = r.GetString(4),
-                    DriveLetter = r.GetString(5)[0],
-                    Enabled = r.GetInt32(6) != 0,
-                    AddedAt = DateTimeOffset.Parse(r.GetString(7)),
-                });
-            }
-            return list;
-        }
+        lock (_lock) return _accounts.OrderBy(a => a.AddedAt).Select(Clone).ToList();
     }
 
     public void UpsertAccount(AccountRecord a)
     {
         lock (_lock)
         {
-            using var c = Open();
-            using var cmd = c.CreateCommand();
-            cmd.CommandText = """
-                INSERT INTO accounts (id, provider, label, display_name, email, drive_letter, enabled, added_at)
-                VALUES ($id, $p, $l, $d, $e, $dl, $en, $at)
-                ON CONFLICT(id) DO UPDATE SET label=$l, display_name=$d, email=$e, drive_letter=$dl, enabled=$en;
-                """;
-            cmd.Parameters.AddWithValue("$id", a.Id);
-            cmd.Parameters.AddWithValue("$p", (int)a.Provider);
-            cmd.Parameters.AddWithValue("$l", a.Label);
-            cmd.Parameters.AddWithValue("$d", a.DisplayName);
-            cmd.Parameters.AddWithValue("$e", a.Email);
-            cmd.Parameters.AddWithValue("$dl", char.ToUpperInvariant(a.DriveLetter).ToString());
-            cmd.Parameters.AddWithValue("$en", a.Enabled ? 1 : 0);
-            cmd.Parameters.AddWithValue("$at", a.AddedAt.ToString("O"));
-            cmd.ExecuteNonQuery();
+            var letter = char.ToUpperInvariant(a.DriveLetter);
+            if (_accounts.Any(x => x.Id != a.Id && char.ToUpperInvariant(x.DriveLetter) == letter))
+                throw new InvalidOperationException($"Drive letter {letter}: is already used by another account.");
+            var copy = Clone(a);
+            copy.DriveLetter = letter;
+            var idx = _accounts.FindIndex(x => x.Id == a.Id);
+            if (idx >= 0) _accounts[idx] = copy;
+            else _accounts.Add(copy);
+            Write("accounts.json", _accounts);
         }
     }
 
@@ -130,15 +95,28 @@ public sealed class AppDatabase
     {
         lock (_lock)
         {
-            using var c = Open();
-            using var cmd = c.CreateCommand();
-            cmd.CommandText = "DELETE FROM accounts WHERE id=$id; DELETE FROM transfers WHERE account_id=$id;";
-            cmd.Parameters.AddWithValue("$id", id);
-            cmd.ExecuteNonQuery();
+            _accounts.RemoveAll(a => a.Id == id);
+            _transfers.RemoveAll(t => t.AccountId == id);
+            foreach (var k in _values.Keys.Where(k => k.EndsWith(":" + id, StringComparison.Ordinal)).ToList()) _values.Remove(k);
+            Write("accounts.json", _accounts);
+            Write("state.json", _values);
+            _journalDirty = true;
         }
     }
 
-    // ---------------- settings ----------------
+    private static AccountRecord Clone(AccountRecord a) => new()
+    {
+        Id = a.Id,
+        Provider = a.Provider,
+        DisplayName = a.DisplayName,
+        Email = a.Email,
+        DriveLetter = a.DriveLetter,
+        Enabled = a.Enabled,
+        AddedAt = a.AddedAt,
+        Label = a.Label,
+    };
+
+    // ---------------- settings & state ----------------
 
     public AppSettings LoadSettings()
     {
@@ -146,7 +124,7 @@ public sealed class AppDatabase
         if (json is null) return new AppSettings();
         try
         {
-            return JsonSerializer.Deserialize<AppSettings>(json) ?? new AppSettings();
+            return JsonSerializer.Deserialize<AppSettings>(json, Json) ?? new AppSettings();
         }
         catch (JsonException)
         {
@@ -154,30 +132,20 @@ public sealed class AppDatabase
         }
     }
 
-    public void SaveSettings(AppSettings s) => SetValue("app_settings", JsonSerializer.Serialize(s));
+    public void SaveSettings(AppSettings s) => SetValue("app_settings", JsonSerializer.Serialize(s, Json));
 
     public string? GetValue(string key)
     {
-        lock (_lock)
-        {
-            using var c = Open();
-            using var cmd = c.CreateCommand();
-            cmd.CommandText = "SELECT value FROM settings WHERE key=$k";
-            cmd.Parameters.AddWithValue("$k", key);
-            return cmd.ExecuteScalar() as string;
-        }
+        lock (_lock) return _values.TryGetValue(key, out var v) ? v : null;
     }
 
     public void SetValue(string key, string value)
     {
         lock (_lock)
         {
-            using var c = Open();
-            using var cmd = c.CreateCommand();
-            cmd.CommandText = "INSERT INTO settings(key, value) VALUES ($k, $v) ON CONFLICT(key) DO UPDATE SET value=$v";
-            cmd.Parameters.AddWithValue("$k", key);
-            cmd.Parameters.AddWithValue("$v", value);
-            cmd.ExecuteNonQuery();
+            if (_values.TryGetValue(key, out var old) && old == value) return;
+            _values[key] = value;
+            Write("state.json", _values);
         }
     }
 
@@ -187,15 +155,11 @@ public sealed class AppDatabase
     {
         lock (_lock)
         {
-            using var c = Open();
-            using var cmd = c.CreateCommand();
-            cmd.CommandText = """
-                INSERT INTO transfers (account_id, path, direction, state, bytes_done, bytes_total, attempts, error, started, updated)
-                VALUES ($a, $p, $d, $s, $bd, $bt, $at, $e, $st, $up);
-                SELECT last_insert_rowid();
-                """;
-            Bind(cmd, t);
-            return (long)cmd.ExecuteScalar()!;
+            t.Id = ++_nextTransferId;
+            _transfers.Add(Copy(t));
+            if (_transfers.Count > JournalLimit) _transfers.RemoveRange(0, _transfers.Count - JournalLimit);
+            _journalDirty = true;
+            return t.Id;
         }
     }
 
@@ -203,50 +167,16 @@ public sealed class AppDatabase
     {
         lock (_lock)
         {
-            using var c = Open();
-            using var cmd = c.CreateCommand();
-            cmd.CommandText = """
-                UPDATE transfers SET path=$p, state=$s, bytes_done=$bd, bytes_total=$bt, attempts=$at, error=$e, updated=$up
-                WHERE id=$id
-                """;
-            Bind(cmd, t);
-            cmd.Parameters.AddWithValue("$id", t.Id);
-            cmd.ExecuteNonQuery();
+            var idx = _transfers.FindIndex(x => x.Id == t.Id);
+            if (idx < 0) return;
+            _transfers[idx] = Copy(t);
+            _journalDirty = true;
         }
     }
 
     public List<TransferDto> GetTransfers(int limit = 500)
     {
-        lock (_lock)
-        {
-            using var c = Open();
-            using var cmd = c.CreateCommand();
-            cmd.CommandText = """
-                SELECT id, account_id, path, direction, state, bytes_done, bytes_total, attempts, error, started, updated
-                FROM transfers ORDER BY id DESC LIMIT $n
-                """;
-            cmd.Parameters.AddWithValue("$n", limit);
-            using var r = cmd.ExecuteReader();
-            var list = new List<TransferDto>();
-            while (r.Read())
-            {
-                list.Add(new TransferDto
-                {
-                    Id = r.GetInt64(0),
-                    AccountId = r.GetString(1),
-                    Path = r.GetString(2),
-                    Direction = (TransferDirection)r.GetInt32(3),
-                    State = (TransferState)r.GetInt32(4),
-                    BytesDone = r.GetInt64(5),
-                    BytesTotal = r.GetInt64(6),
-                    Attempts = r.GetInt32(7),
-                    Error = r.IsDBNull(8) ? null : r.GetString(8),
-                    Started = DateTimeOffset.Parse(r.GetString(9)),
-                    Updated = DateTimeOffset.Parse(r.GetString(10)),
-                });
-            }
-            return list;
-        }
+        lock (_lock) return _transfers.OrderByDescending(t => t.Id).Take(limit).Select(Copy).ToList();
     }
 
     /// <summary>
@@ -257,22 +187,17 @@ public sealed class AppDatabase
     {
         lock (_lock)
         {
-            using var c = Open();
-            using var cmd = c.CreateCommand();
-            cmd.CommandText = """
-                UPDATE transfers SET state=$i, error=$e, updated=$u
-                WHERE state IN ($p1, $p2, $p3, $p4, $p5, $p6)
-                """;
-            cmd.Parameters.AddWithValue("$i", (int)TransferState.Interrupted);
-            cmd.Parameters.AddWithValue("$e", "Service stopped before the upload was committed. The unsaved data was held only in RAM; copy the file again.");
-            cmd.Parameters.AddWithValue("$u", DateTimeOffset.UtcNow.ToString("O"));
-            cmd.Parameters.AddWithValue("$p1", (int)TransferState.Pending);
-            cmd.Parameters.AddWithValue("$p2", (int)TransferState.Uploading);
-            cmd.Parameters.AddWithValue("$p3", (int)TransferState.Downloading);
-            cmd.Parameters.AddWithValue("$p4", (int)TransferState.Processing);
-            cmd.Parameters.AddWithValue("$p5", (int)TransferState.Retrying);
-            cmd.Parameters.AddWithValue("$p6", (int)TransferState.Offline);
-            return cmd.ExecuteNonQuery();
+            var n = 0;
+            foreach (var t in _transfers.Where(t => t.State is TransferState.Pending or TransferState.Uploading
+                         or TransferState.Downloading or TransferState.Processing or TransferState.Retrying or TransferState.Offline))
+            {
+                t.State = TransferState.Interrupted;
+                t.Error = "Service stopped before the upload was committed. The unsaved data was held only in RAM; copy the file again.";
+                t.Updated = DateTimeOffset.UtcNow;
+                n++;
+            }
+            if (n > 0) WriteJournal();
+            return n;
         }
     }
 
@@ -280,27 +205,44 @@ public sealed class AppDatabase
     {
         lock (_lock)
         {
-            using var c = Open();
-            using var cmd = c.CreateCommand();
-            cmd.CommandText = "DELETE FROM transfers WHERE state IN ($c, $f, $i)";
-            cmd.Parameters.AddWithValue("$c", (int)TransferState.Completed);
-            cmd.Parameters.AddWithValue("$f", (int)TransferState.Failed);
-            cmd.Parameters.AddWithValue("$i", (int)TransferState.Interrupted);
-            return cmd.ExecuteNonQuery();
+            var n = _transfers.RemoveAll(t => t.State is TransferState.Completed or TransferState.Failed or TransferState.Interrupted);
+            WriteJournal();
+            return n;
         }
     }
 
-    private static void Bind(SqliteCommand cmd, TransferDto t)
+    public void FlushJournal()
     {
-        cmd.Parameters.AddWithValue("$a", t.AccountId);
-        cmd.Parameters.AddWithValue("$p", t.Path);
-        cmd.Parameters.AddWithValue("$d", (int)t.Direction);
-        cmd.Parameters.AddWithValue("$s", (int)t.State);
-        cmd.Parameters.AddWithValue("$bd", t.BytesDone);
-        cmd.Parameters.AddWithValue("$bt", t.BytesTotal);
-        cmd.Parameters.AddWithValue("$at", t.Attempts);
-        cmd.Parameters.AddWithValue("$e", (object?)t.Error ?? DBNull.Value);
-        cmd.Parameters.AddWithValue("$st", t.Started.ToString("O"));
-        cmd.Parameters.AddWithValue("$up", t.Updated.ToString("O"));
+        lock (_lock)
+        {
+            if (!_journalDirty) return;
+            try
+            {
+                WriteJournal();
+            }
+            catch (IOException)
+            {
+                // Try again on the next tick.
+            }
+        }
+    }
+
+    private void WriteJournal()
+    {
+        Write("transfers.json", _transfers);
+        _journalDirty = false;
+    }
+
+    private static TransferDto Copy(TransferDto t) => new()
+    {
+        Id = t.Id, AccountId = t.AccountId, DriveLetter = t.DriveLetter, Path = t.Path, Direction = t.Direction,
+        State = t.State, BytesDone = t.BytesDone, BytesTotal = t.BytesTotal, Attempts = t.Attempts, Error = t.Error,
+        Started = t.Started, Updated = t.Updated,
+    };
+
+    public void Dispose()
+    {
+        _flushTimer.Dispose();
+        FlushJournal();
     }
 }

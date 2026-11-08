@@ -19,7 +19,7 @@ if (Environment.UserInteractive) builder.Logging.AddSimpleConsole();
 builder.Logging.SetMinimumLevel(LogLevel.Information);
 
 builder.Services.AddSingleton(fileLogs);
-builder.Services.AddSingleton(_ => new AppDatabase(AppPaths.DatabaseFile));
+builder.Services.AddSingleton(_ => new AppDatabase(AppPaths.StoreDir));
 builder.Services.AddSingleton(_ =>
 {
     // As LocalSystem, credentials are encrypted with machine-scope DPAPI in an ACL-restricted folder.

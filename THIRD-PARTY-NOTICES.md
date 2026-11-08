@@ -9,9 +9,6 @@ XCloudSSD is released under the MIT License (see `LICENSE`). It uses or redistri
 | **.NET 10 runtime** (Microsoft) | Self-contained runtime inside `XCloudSSD.exe` and `XCloudSSDService.exe` | MIT |
 | **WPF / Windows Forms** (Microsoft) | Desktop UI, tray icon | MIT |
 | **Microsoft.Extensions.Hosting / Logging / WindowsServices** | Windows service host | MIT |
-| **Microsoft.Data.Sqlite** | Local account/settings/journal database | MIT |
-| **SQLitePCLRaw** | SQLite native bindings | Apache-2.0 |
-| **SQLite** | Database engine | Public domain |
 | **System.Security.Cryptography.ProtectedData** | Windows DPAPI token encryption | MIT |
 | **xUnit.net**, **Microsoft.NET.Test.Sdk** | Tests only (not shipped) | Apache-2.0 / MIT |
 | **Inno Setup** | Builds `XCloudSSD-Setup.exe` (build tool, not shipped as a library) | Inno Setup License |
