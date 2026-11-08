@@ -294,7 +294,7 @@ public sealed class InMemoryCloudProvider : ICloudProvider
                 Obj o;
                 if (target.ExistingFileId is { } id)
                 {
-                    if (!owner._objects.TryGetValue(id, out o!)) throw new CloudException(CloudErrorKind.NotFound, "No such file.");
+                    o = owner._objects.TryGetValue(id, out var existing) ? existing : throw new CloudException(CloudErrorKind.NotFound, "No such file.");
                 }
                 else
                 {

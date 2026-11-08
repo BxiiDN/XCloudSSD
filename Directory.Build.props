@@ -5,7 +5,6 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
     <PlatformTarget>x64</PlatformTarget>
-    <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
     <Company>XCloudSSD</Company>
     <Product>XCloudSSD</Product>
     <Copyright>Copyright (c) 2026 XCloudSSD contributors</Copyright>
