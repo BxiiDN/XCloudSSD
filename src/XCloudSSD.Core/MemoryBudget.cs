@@ -39,15 +39,24 @@ public sealed class MemoryBudget
         lock (_lock) _reclaimers.RemoveAll(w => !w.TryGetTarget(out var t) || ReferenceEquals(t, r));
     }
 
+    /// <summary>
+    /// Share of the budget kept free for "priority" reservations: pages that let a stalled upload move forward.
+    /// Without it, a buffer full of out-of-order data could never receive the missing piece that unblocks it.
+    /// </summary>
+    public const double PriorityReserve = 0.15;
+
     /// <summary>Reserve bytes, reclaiming read buffers if necessary.</summary>
-    public bool TryReserve(long bytes, IReclaimable? exclude = null)
+    public bool TryReserve(long bytes, IReclaimable? exclude = null) => TryReserve(bytes, exclude, priority: false);
+
+    public bool TryReserve(long bytes, IReclaimable? exclude, bool priority)
     {
         if (bytes <= 0) return true;
         for (var attempt = 0; attempt < 2; attempt++)
         {
             lock (_lock)
             {
-                if (_used + bytes <= Capacity)
+                var limit = priority ? Capacity : (long)(Capacity * (1 - PriorityReserve));
+                if (_used + bytes <= limit)
                 {
                     _used += bytes;
                     if (_used > _peak) _peak = _used;
@@ -66,6 +75,24 @@ public sealed class MemoryBudget
         {
             _used -= bytes;
             if (_used < 0) _used = 0;
+            Monitor.PulseAll(_lock);
+        }
+    }
+
+    /// <summary>
+    /// Back-pressure: waits (without holding any caller lock) until the bytes fit, e.g. while other files upload
+    /// and free their pages. Returns false after <paramref name="timeout"/>.
+    /// </summary>
+    public bool ReserveOrWait(long bytes, bool priority, TimeSpan timeout, Func<bool>? makeProgress, CancellationToken ct)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (true)
+        {
+            if (TryReserve(bytes, null, priority)) return true;
+            if (makeProgress?.Invoke() == true && TryReserve(bytes, null, priority)) return true;
+            var remaining = deadline - DateTime.UtcNow;
+            if (remaining <= TimeSpan.Zero || ct.IsCancellationRequested) return false;
+            lock (_lock) Monitor.Wait(_lock, remaining < TimeSpan.FromMilliseconds(500) ? remaining : TimeSpan.FromMilliseconds(500));
         }
     }
 

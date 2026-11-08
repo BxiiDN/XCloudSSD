@@ -23,7 +23,9 @@ public sealed class WriteSessionException : Exception
 public sealed record WriteOptions(
     int UploadChunkBytes,
     long StreamingThresholdBytes,
-    bool StreamingEnabled = true);
+    bool StreamingEnabled = true,
+    /// <summary>How long a write may wait for RAM to be freed by uploads before failing (back-pressure).</summary>
+    double BufferWaitSeconds = 0);
 
 /// <summary>Where a commit goes: a new file (parent + name) or an existing file id.</summary>
 public sealed record CommitTarget(string? ExistingFileId, string? ParentId, string? Name, uint Attributes, DateTimeOffset Modified);
@@ -48,7 +50,43 @@ public sealed class WriteSession : IDisposable
     private sealed class Page
     {
         public required byte[] Data;
-        public int Filled; // contiguous bytes written from the page start (decides streamability)
+        /// <summary>Written byte ranges (sorted, merged). A page is "full" when [0, PageSize) is covered.</summary>
+        private List<(int Start, int End)>? _ranges;
+        public bool Full;
+
+        public void MarkWritten(int start, int end)
+        {
+            if (Full) return;
+            _ranges ??= new List<(int, int)>(2);
+            _ranges.Add((start, end));
+            _ranges.Sort((a, b) => a.Start.CompareTo(b.Start));
+            var merged = new List<(int Start, int End)>(_ranges.Count);
+            foreach (var r in _ranges)
+            {
+                if (merged.Count > 0 && r.Start <= merged[^1].End)
+                    merged[^1] = (merged[^1].Start, Math.Max(merged[^1].End, r.End));
+                else
+                    merged.Add(r);
+            }
+            _ranges = merged;
+            if (merged.Count == 1 && merged[0].Start == 0 && merged[0].End >= PageSize)
+            {
+                Full = true;
+                _ranges = null;
+            }
+        }
+
+        public void Truncate(int keep)
+        {
+            if (Full)
+            {
+                Full = false;
+                _ranges = new List<(int, int)> { (0, keep) };
+                return;
+            }
+            if (_ranges is null) return;
+            _ranges = _ranges.Where(r => r.Start < keep).Select(r => (r.Start, Math.Min(r.End, keep))).ToList();
+        }
     }
 
     private readonly ICloudProvider _provider;
@@ -112,9 +150,53 @@ public sealed class WriteSession : IDisposable
 
     public void Write(long offset, ReadOnlySpan<byte> data, CancellationToken ct)
     {
+        if (data.Length == 0) return;
+        // Reserve RAM for new pages *before* taking the session lock, so a write that has to wait for uploads
+        // to free memory never blocks other writers of the same file (one of them may be filling the gap that
+        // lets this file's upload move forward).
+        var credit = AcquireCredit(offset, data.Length, ct);
+        try
+        {
+            WriteLocked(offset, data, ref credit, ct);
+        }
+        finally
+        {
+            if (credit > 0) _budget.Release(credit);
+        }
+    }
+
+    private long AcquireCredit(long offset, int length, CancellationToken ct)
+    {
+        long missing;
+        bool nearFrontier;
         lock (_lock)
         {
-            if (data.Length == 0) return;
+            missing = 0;
+            for (var idx = offset / PageSize; idx <= (offset + length - 1) / PageSize; idx++)
+                if (!_pages.ContainsKey(idx)) missing++;
+            // Pages right after the uploaded part are what unblock streaming: they may use the priority reserve.
+            nearFrontier = offset < _frontier + 2L * Math.Max(_options.UploadChunkBytes, 4 << 20);
+        }
+        if (missing == 0) return 0;
+        var bytes = missing * PageSize;
+        if (_budget.TryReserve(bytes, null, nearFrontier)) return bytes;
+        lock (_lock) TryPumpStream(ct, force: true);
+        if (_budget.TryReserve(bytes, null, nearFrontier)) return bytes;
+        var ok = _budget.ReserveOrWait(bytes, nearFrontier, TimeSpan.FromSeconds(_options.BufferWaitSeconds), () =>
+        {
+            lock (_lock) TryPumpStream(ct, force: true);
+            return false;
+        }, ct);
+        if (ok) return bytes;
+        throw new WriteSessionException(WriteFailure.BufferExhausted,
+            "The RAM write buffer is full: this file is being written far out of order and the missing parts did not arrive in time. " +
+            "Increase the RAM buffer in Settings (2048–4096 MB is recommended for game installs) and retry.");
+    }
+
+    private void WriteLocked(long offset, ReadOnlySpan<byte> data, ref long credit, CancellationToken ct)
+    {
+        lock (_lock)
+        {
             if (offset < _frontier)
                 throw new WriteSessionException(WriteFailure.BelowStreamedData,
                     $"Write at offset {offset} is below the {_frontier} bytes already streamed to the cloud; that data is no longer in RAM and there is no disk cache.");
@@ -135,10 +217,10 @@ public sealed class WriteSession : IDisposable
                     pos += n;
                     continue;
                 }
-                var page = GetOrCreatePage(pageIndex, ct);
+                var page = GetOrCreatePage(pageIndex, ref credit, ct);
                 _zeroPages.Remove(pageIndex);
                 segment.CopyTo(page.Data.AsSpan(inPage));
-                if (inPage <= page.Filled) page.Filled = Math.Max(page.Filled, inPage + n);
+                page.MarkWritten(inPage, inPage + n);
                 _dataEnd = Math.Max(_dataEnd, abs + n);
                 pos += n;
             }
@@ -166,7 +248,7 @@ public sealed class WriteSession : IDisposable
                 {
                     var keep = (int)(newSize % PageSize);
                     Array.Clear(tail.Data, keep, PageSize - keep);
-                    tail.Filled = Math.Min(tail.Filled, keep);
+                    tail.Truncate(keep);
                 }
                 if (newSize < BaseSize) BaseSize = newSize;
             }
@@ -175,16 +257,17 @@ public sealed class WriteSession : IDisposable
         }
     }
 
-    private Page GetOrCreatePage(long index, CancellationToken ct)
+    private Page GetOrCreatePage(long index, ref long credit, CancellationToken ct)
     {
         if (_pages.TryGetValue(index, out var p)) return p;
-        if (!_budget.TryReserve(PageSize))
+        if (credit >= PageSize)
         {
-            // Make room by uploading streamable data, then try once more.
-            TryPumpStream(ct, force: true);
-            if (!_budget.TryReserve(PageSize))
-                throw new WriteSessionException(WriteFailure.BufferExhausted,
-                    "The RAM write buffer is full. XCloudSSD never spills file data to a physical disk; increase the RAM buffer in Settings or write the file sequentially.");
+            credit -= PageSize;
+        }
+        else if (!_budget.TryReserve(PageSize, null, priority: true))
+        {
+            throw new WriteSessionException(WriteFailure.BufferExhausted,
+                "The RAM write buffer is full. Increase the RAM buffer in Settings (2048–4096 MB is recommended for game installs).");
         }
         var page = new Page { Data = new byte[PageSize] };
         var pageStart = index * PageSize;
@@ -201,7 +284,7 @@ public sealed class WriteSession : IDisposable
                 _budget.Release(PageSize);
                 throw;
             }
-            page.Filled = PageSize;
+            page.MarkWritten(0, PageSize);
         }
         _pages[index] = page;
         return page;
@@ -225,8 +308,16 @@ public sealed class WriteSession : IDisposable
     {
         long bytes = 0;
         var idx = _frontier / PageSize;
-        while ((_pages.TryGetValue(idx, out var p) && p.Filled == PageSize) || _zeroPages.Contains(idx))
+        while (true)
         {
+            if (_pages.TryGetValue(idx, out var p))
+            {
+                if (!p.Full) break;
+            }
+            else if (!_zeroPages.Contains(idx) && (idx + 1) * PageSize > BaseSize)
+            {
+                break; // a gap that has not been written yet (pages fully inside stored content are complete)
+            }
             bytes += PageSize;
             idx++;
         }
@@ -235,10 +326,18 @@ public sealed class WriteSession : IDisposable
 
     private void TryPumpStream(CancellationToken ct, bool force)
     {
-        if (!_options.StreamingEnabled || BaseSize != 0 || _streamTarget is null || DataLost) return;
+        if (!_options.StreamingEnabled || _streamTarget is null || DataLost) return;
         if (DateTime.UtcNow < _pumpRetryAfter) return;
-        var pendingTotal = (long)_pages.Count * PageSize;
-        if (_stream is null && !force && pendingTotal < _options.StreamingThresholdBytes) return;
+        if (_stream is null)
+        {
+            // Files with stored content only stream when they are being extended (all dirty pages at or after the
+            // end of the stored content, e.g. a download resumed after the file was closed): the stored part is then
+            // copied through from the cloud. Files patched in the middle keep their pages in RAM until closed.
+            if (BaseSize > 0 && (_pages.Count == 0 || _pages.Keys.First() < BaseSize / PageSize)) return;
+            var pendingTotal = (long)_pages.Count * PageSize;
+            var underPressure = _budget.Used > _budget.Capacity / 2;
+            if (!force && !underPressure && pendingTotal < _options.StreamingThresholdBytes) return;
+        }
 
         var granularity = _stream?.Granularity ?? 256 * 1024;
         var chunk = Math.Max(granularity, _options.UploadChunkBytes / granularity * granularity);

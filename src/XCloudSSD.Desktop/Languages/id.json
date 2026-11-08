@@ -202,7 +202,7 @@
  "DriveLetterHint": "Huruf drive diatur per disk di Disk Virtual Saya.",
  "SecTransfer": "Transfer & buffer",
  "OptRamBuffer": "Buffer RAM (MB)",
- "OptRamBufferHint": "Dipakai bersama oleh buffer baca dan tulisan yang belum tersimpan. Tidak pernah memakai cache disk.",
+ "OptRamBufferHint": "Dipakai bersama oleh buffer baca dan tulisan yang belum tersimpan. Tidak pernah memakai cache disk. Install game: disarankan 2048–4096 MB — data menunggu di sini sampai terunggah, jadi kecepatan install mengikuti kecepatan upload Anda.",
  "OptReadChunk": "Ukuran potongan baca (KB)",
  "OptReadAhead": "Potongan baca di depan",
  "OptUploadChunk": "Ukuran potongan unggah (MB)",

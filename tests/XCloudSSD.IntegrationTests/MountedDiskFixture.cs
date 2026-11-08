@@ -49,12 +49,13 @@ public sealed class TestDisk : IDisposable
             StreamingThresholdBytes = 8L << 20,
             CommitRetryInterval = TimeSpan.FromSeconds(1),
             SyncCommitAttempts = 1,
+            BufferWaitSeconds = 20,
             DeleteMode = DeleteMode.Permanent,
         };
         Fs = new CloudFileSystem(Cloud, tree, _cache, Budget, Transfers, new Metrics(), NullLogger.Instance, options,
             () => Cloud.GetQuotaAsync(default).GetAwaiter().GetResult());
         _host = new FileSystemHost(Fs);
-        var status = _host.Mount($"{Letter}:", null, false, 0);
+        var status = _host.MountEx($"{Letter}:", 16, null, false, 0);
         if (status < 0) throw new InvalidOperationException($"WinFsp mount of {Letter}: failed: 0x{status:X8}");
         // Wait until Windows sees the volume.
         for (var i = 0; i < 50 && !Directory.Exists(Root); i++) Thread.Sleep(100);

@@ -202,7 +202,7 @@
  "DriveLetterHint": "Drive letters are set per disk under My Virtual Disks.",
  "SecTransfer": "Transfers & buffers",
  "OptRamBuffer": "RAM buffer (MB)",
- "OptRamBufferHint": "Shared by read buffers and unsaved writes. No disk cache is ever used.",
+ "OptRamBufferHint": "Shared by read buffers and unsaved writes. No disk cache is ever used. Game installs: 2048–4096 MB recommended — data waits here until it is uploaded, so installs run at your upload speed.",
  "OptReadChunk": "Read chunk (KB)",
  "OptReadAhead": "Read-ahead chunks",
  "OptUploadChunk": "Upload chunk (MB)",

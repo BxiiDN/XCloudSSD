@@ -68,7 +68,7 @@ internal sealed class DriveUploadSession : IUploadSession
                 if (status is 200 or 201)
                 {
                     Interlocked.Exchange(ref _committed, target);
-                    var json = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+                    var json = await resp.Content.ReadUtf8Async(ct).ConfigureAwait(false);
                     return GoogleDriveProvider.ParseItemFromJson(json);
                 }
                 if (status == 308)

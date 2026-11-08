@@ -17,7 +17,31 @@ public sealed class AppSettings
     public bool RestorePreviousConfiguration { get; set; } = true;
 
     /// <summary>Total RAM shared by read buffers and pending writes across all disks.</summary>
-    public int RamBufferMB { get; set; } = 512;
+    public int RamBufferMB { get; set; } = RecommendedRamBufferMB();
+
+    /// <summary>Settings layout version; lets an upgrade lift the old 512 MB default.</summary>
+    public int SettingsVersion { get; set; }
+
+    /// <summary>
+    /// Default RAM buffer: a quarter of physical RAM, between 1024 and 4096 MB. Game installs write many
+    /// files at once, and every byte waiting for upload has to sit in RAM (there is no disk cache).
+    /// </summary>
+    public static int RecommendedRamBufferMB()
+    {
+        var total = GC.GetGCMemoryInfo().TotalAvailableMemoryBytes;
+        var quarter = total > 0 ? (int)Math.Min(int.MaxValue, total / 4 >> 20) : 1024;
+        return Math.Clamp(quarter, 1024, 4096);
+    }
+
+    /// <summary>Upgrades settings saved by older versions.</summary>
+    public void Migrate()
+    {
+        if (SettingsVersion < 2)
+        {
+            if (RamBufferMB == 512) RamBufferMB = RecommendedRamBufferMB();
+            SettingsVersion = 2;
+        }
+    }
     /// <summary>Range size fetched per cloud read request.</summary>
     public int ReadChunkKB { get; set; } = 4096;
     /// <summary>Chunks prefetched ahead when sequential access is detected.</summary>

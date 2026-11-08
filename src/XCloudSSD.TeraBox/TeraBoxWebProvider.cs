@@ -38,8 +38,14 @@ public sealed class TeraBoxWebProvider : ICloudProvider, IRootOverride
     private string? _uploadHost;
 
     public TeraBoxWebProvider(string cookie, Metrics metrics, HttpMessageHandler? handler = null,
-        string? jsToken = null, string? baseUrl = null)
+        string? jsToken = null, string? baseUrl = null, ISparseSizeStore? sparse = null)
     {
+        _sparse = sparse;
+        Capabilities = new ProviderCapabilities(
+            CanMount: true, RangeRead: true, ResumableUpload: false, Rename: true, Move: true, Trash: true,
+            QuotaInfo: true, ChangeFeed: false, CustomProperties: sparse is not null,
+            Notes: "TeraBox via its web interface (unofficial, may change). Uploads go in 4 MiB parts; free accounts limit single files to 4 GB. " +
+                   "No change feed (folders refresh on a timer); reserved (sparse) sizes are remembered on this PC only; deletes go to the TeraBox recycle bin.");
         if (!string.IsNullOrWhiteSpace(jsToken)) _jsToken = jsToken.Trim();
         if (Uri.TryCreate(baseUrl, UriKind.Absolute, out var b) && b.Scheme == "https" && IsTeraBoxHost(b.Host))
             _baseUrl = $"https://{b.Host}";
@@ -60,11 +66,9 @@ public sealed class TeraBoxWebProvider : ICloudProvider, IRootOverride
     public ProviderKind Kind => ProviderKind.TeraBox;
     public string RootId => RootKey;
 
-    public ProviderCapabilities Capabilities { get; } = new(
-        CanMount: true, RangeRead: true, ResumableUpload: false, Rename: true, Move: true, Trash: true,
-        QuotaInfo: true, ChangeFeed: false, CustomProperties: false,
-        Notes: "TeraBox via its web interface (unofficial, may change). Uploads go in 4 MiB parts; free accounts limit single files to 4 GB. " +
-               "No change feed (folders refresh on a timer), no custom properties (Windows attributes and reserved sparse space are not kept), deletes go to the TeraBox recycle bin.");
+    private readonly ISparseSizeStore? _sparse;
+
+    public ProviderCapabilities Capabilities { get; }
 
     public void UseRootId(string rootId)
     {
@@ -124,7 +128,7 @@ public sealed class TeraBoxWebProvider : ICloudProvider, IRootOverride
                         url = next.ToString();
                         continue;
                     }
-                    var token = ExtractJsToken(await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false));
+                    var token = ExtractJsToken(await resp.Content.ReadUtf8Async(ct).ConfigureAwait(false));
                     if (!string.IsNullOrEmpty(token))
                     {
                         _jsToken = token;
@@ -209,12 +213,15 @@ public sealed class TeraBoxWebProvider : ICloudProvider, IRootOverride
         lock (_mapLock) _map[id] = (parentId, name, isDir);
         var mtime = f["server_mtime"] is { } m ? DateTimeOffset.FromUnixTimeSeconds(m.GetValue<long>()) : DateTimeOffset.UnixEpoch;
         var ctime = f["server_ctime"] is { } c ? DateTimeOffset.FromUnixTimeSeconds(c.GetValue<long>()) : mtime;
+        var stored = isDir ? 0 : f["size"]?.GetValue<long>() ?? 0;
+        var logical = isDir ? null : _sparse?.Get(id);
         return new CloudItem
         {
             Id = id,
             Name = name,
             IsFolder = isDir,
-            Size = isDir ? 0 : f["size"]?.GetValue<long>() ?? 0,
+            Size = logical is { } l && l > stored ? l : stored,
+            StoredSize = stored,
             Created = ctime,
             Modified = mtime,
             Parents = new[] { parentId },
@@ -405,7 +412,8 @@ public sealed class TeraBoxWebProvider : ICloudProvider, IRootOverride
             await ManageAsync("rename", new JsonArray(new JsonObject { ["path"] = path, ["newname"] = newName }), ct).ConfigureAwait(false);
             lock (_mapLock) _map[id] = (parent, newName, _map[id].IsFolder);
         }
-        // Attributes, times and logical (sparse) size cannot be stored on TeraBox; they are ignored.
+        // Attributes and times cannot be stored on TeraBox. A logical (sparse) size is remembered locally.
+        if (u.LogicalSize is { } logical && _sparse is not null) _sparse.Set(id, logical);
         return await FindChildAsync(parent, newName, ct).ConfigureAwait(false);
     }
 
@@ -423,6 +431,7 @@ public sealed class TeraBoxWebProvider : ICloudProvider, IRootOverride
         // The web interface moves deleted items to the TeraBox recycle bin.
         await ManageAsync("delete", new JsonArray(JsonValue.Create(path)), ct).ConfigureAwait(false);
         lock (_mapLock) _map.Remove(id);
+        _sparse?.Set(id, null);
     }
 
     private Task ManageAsync(string opera, JsonArray filelist, CancellationToken ct)
@@ -475,7 +484,7 @@ public sealed class TeraBoxWebProvider : ICloudProvider, IRootOverride
         {
             using var req = NewRequest(HttpMethod.Get, "https://d.terabox.com/rest/2.0/pcs/file?method=locateupload");
             using var resp = await SendRawAsync(req, ct).ConfigureAwait(false);
-            var json = JsonNode.Parse(await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false));
+            var json = JsonNode.Parse(await resp.Content.ReadUtf8Async(ct).ConfigureAwait(false));
             var host = json?["host"]?.GetValue<string>();
             _uploadHost = string.IsNullOrEmpty(host) ? "c-all.terabox.com" : host;
         }
@@ -520,7 +529,7 @@ public sealed class TeraBoxWebProvider : ICloudProvider, IRootOverride
             form.Add(file, "file", "blob");
             req.Content = form;
             using var resp = await SendRawAsync(req, ct).ConfigureAwait(false);
-            var body = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+            var body = await resp.Content.ReadUtf8Async(ct).ConfigureAwait(false);
             if (!resp.IsSuccessStatusCode)
                 throw new CloudException(Retry.KindForStatus(resp.StatusCode), $"TeraBox part upload failed: {(int)resp.StatusCode} {Trim(body)}", (int)resp.StatusCode);
             var errno = TryErrno(body);
@@ -587,7 +596,7 @@ public sealed class TeraBoxWebProvider : ICloudProvider, IRootOverride
                 using var req = NewRequest(method, $"{_baseUrl}{path}?{Query(query)}");
                 if (form is not null) req.Content = new FormUrlEncodedContent(form);
                 using var resp = await SendRawAsync(req, ct).ConfigureAwait(false);
-                var text = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+                var text = await resp.Content.ReadUtf8Async(ct).ConfigureAwait(false);
                 if ((int)resp.StatusCode >= 500 || resp.StatusCode == HttpStatusCode.TooManyRequests)
                     throw new CloudException(Retry.KindForStatus(resp.StatusCode), $"TeraBox {path}: HTTP {(int)resp.StatusCode}", (int)resp.StatusCode);
                 JsonObject json;
@@ -670,7 +679,11 @@ public sealed class TeraBoxWebProvider : ICloudProvider, IRootOverride
         }
     }
 
-    public void Dispose() => _http.Dispose();
+    public void Dispose()
+    {
+        _http.Dispose();
+        (_sparse as IDisposable)?.Dispose();
+    }
 }
 
 /// <summary>

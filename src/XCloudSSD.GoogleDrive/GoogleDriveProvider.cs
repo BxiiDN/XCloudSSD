@@ -328,7 +328,7 @@ public sealed class GoogleDriveProvider : ICloudProvider, IRootOverride
             using var req = new HttpRequestMessage(HttpMethod.Get, ApiBase + relative);
             using var resp = await SendAsync(req, ct).ConfigureAwait(false);
             await EnsureSuccessAsync(resp, ct).ConfigureAwait(false);
-            var text = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+            var text = await resp.Content.ReadUtf8Async(ct).ConfigureAwait(false);
             return JsonNode.Parse(text)!.AsObject();
         }, 5, ct).ConfigureAwait(false);
 
@@ -341,7 +341,7 @@ public sealed class GoogleDriveProvider : ICloudProvider, IRootOverride
             };
             using var resp = await SendAsync(req, ct).ConfigureAwait(false);
             await EnsureSuccessAsync(resp, ct).ConfigureAwait(false);
-            var text = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+            var text = await resp.Content.ReadUtf8Async(ct).ConfigureAwait(false);
             return string.IsNullOrWhiteSpace(text) ? new JsonObject() : JsonNode.Parse(text)!.AsObject();
         }, 5, ct).ConfigureAwait(false);
 
@@ -395,7 +395,7 @@ public sealed class GoogleDriveProvider : ICloudProvider, IRootOverride
         string? reason = null, message = null;
         try
         {
-            var text = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+            var text = await resp.Content.ReadUtf8Async(ct).ConfigureAwait(false);
             var err = JsonNode.Parse(text)?["error"];
             message = err?["message"]?.GetValue<string>();
             reason = err?["errors"]?[0]?["reason"]?.GetValue<string>();

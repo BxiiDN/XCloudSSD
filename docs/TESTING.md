@@ -1,5 +1,12 @@
 # Hasil pengujian
 
+## Pembaruan v1.2.0 — perbaikan install game (hasil CI diisi setelah run selesai)
+
+* Respons TeraBox dengan charset tidak standar dibaca sebagai UTF-8 (sebelumnya: "The character set provided in
+  ContentType is invalid").
+* Pola tulis install game diuji: blok 1 MiB yang dipotong di offset tidak sejajar dan diacak per jendela 4 MiB
+  (192 MiB lewat RAM 48 MiB), file reserved lalu diisi, buffer penuh menunggu file lain selesai upload.
+
 ## Pembaruan v1.1.0 — run https://github.com/BxiiDN/XCloudSSD/actions/runs/42485724277 (sukses)
 
 * Unit test 33/33, integration test WinFsp 11/11, self-test WinFsp dari exe yang dipublikasi dan yang terinstal: OK.

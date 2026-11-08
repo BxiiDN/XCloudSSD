@@ -37,6 +37,7 @@ public sealed class DiskManager : IDisposable
         _logs = logs;
         _log = logs.CreateLogger("DiskManager");
         Settings = db.LoadSettings();
+        Settings.Migrate();
         Budget = new MemoryBudget((long)Settings.RamBufferMB << 20);
         Transfers = new TransferTracker(db);
         ApplyThrottles();
@@ -134,7 +135,7 @@ public sealed class DiskManager : IDisposable
         if (secret is null || !secret.TryGetValue("cookie", out var cookie) || string.IsNullOrEmpty(cookie))
             return new UnconfiguredProvider("TeraBox sign-in data for this account is missing. Remove the account and add it again.");
         var provider = new TeraBoxWebProvider(cookie, new Metrics(), null,
-            secret.GetValueOrDefault("jstoken"), secret.GetValueOrDefault("base"));
+            secret.GetValueOrDefault("jstoken"), secret.GetValueOrDefault("base"), new SparseSizeStore(AppPaths.StoreDir, accountId));
         PersistTeraBoxToken(accountId, provider);
         return provider;
     }
@@ -241,7 +242,9 @@ public sealed class DiskManager : IDisposable
     {
         if (string.IsNullOrWhiteSpace(args.Cookie) || !args.Cookie.Contains("ndus=", StringComparison.Ordinal))
             throw new InvalidOperationException("TeraBox sign-in was not completed (no session cookie). Sign in again.");
-        var provider = new TeraBoxWebProvider(args.Cookie.Trim(), new Metrics(), null, args.JsToken, args.BaseUrl);
+        var newId = "t-" + Guid.NewGuid().ToString("N")[..12];
+        var provider = new TeraBoxWebProvider(args.Cookie.Trim(), new Metrics(), null, args.JsToken, args.BaseUrl,
+            new SparseSizeStore(AppPaths.StoreDir, newId));
         try
         {
             await provider.InitializeAsync(ct).ConfigureAwait(false);
@@ -256,7 +259,7 @@ public sealed class DiskManager : IDisposable
         await _gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            var accountId = "t-" + Guid.NewGuid().ToString("N")[..12];
+            var accountId = newId;
             var letter = PickLetter(args.DriveLetter);
             var ordinal = NextOrdinal(ProviderKind.TeraBox);
             var account = new AccountRecord

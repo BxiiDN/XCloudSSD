@@ -126,7 +126,7 @@ public sealed class GoogleTokenClient
                 return await resp.Content.ReadFromJsonAsync<TokenResponse>(ct).ConfigureAwait(false)
                        ?? throw new CloudException(CloudErrorKind.Unknown, "Empty token response.");
 
-            var body = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+            var body = await resp.Content.ReadUtf8Async(ct).ConfigureAwait(false);
             string error = "";
             try
             {

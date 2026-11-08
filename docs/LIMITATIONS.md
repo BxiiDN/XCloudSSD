@@ -11,8 +11,8 @@ XCloudSSD sekarang menambahkan akun TeraBox dengan cara ini:
 * **Belum diuji dengan akun TeraBox sungguhan.** Protokolnya diuji terhadap server terskrip di CI. TeraBox bisa
   mengubah antarmuka ini kapan saja, dan akses otomatis mungkin melanggar ketentuan TeraBox — gunakan dengan akun
   sendiri atas risiko sendiri.
-* Batasan: tidak ada change feed (folder diperbarui berkala), atribut Windows dan ruang "reserved" (sparse) tidak
-  tersimpan di TeraBox, hapus = masuk recycle bin TeraBox, pencarian hanya pada folder yang sudah dibuka,
+* Batasan: tidak ada change feed (folder diperbarui berkala), atribut Windows tidak tersimpan di TeraBox; ukuran
+  ruang "reserved" (sparse) hanya dicatat di PC ini (`sparse-<akun>.json`, metadata saja — bukan isi file), hapus = masuk recycle bin TeraBox, pencarian hanya pada folder yang sudah dibuka,
   akun gratis membatasi satu file maks. 4 GB, file di wilayah dengan domain selain terabox.com belum didukung.
 
 ## Google Drive tidak bisa menulis sebagian file
@@ -24,16 +24,22 @@ Drive menyimpan file sebagai objek utuh. Konsekuensi tanpa cache disk:
 * **Ruang yang dipesan (sparse)**: file yang dibuat dengan ukuran akhir tetapi belum diisi (Steam "Reserving space",
   `SetLength`, atau ditulis nol) tidak diunggah. Ukurannya dicatat di metadata Google Drive (`appProperties`) dan
   bagian kosongnya dibaca sebagai nol. Saat diisi berurutan setelahnya, data asli di-stream ke cloud.
-* **Menulis file besar secara tidak berurutan** (mis. downloader Steam yang menulis chunk acak, memory-mapped write):
-  semua data tertunda harus muat di buffer RAM. Jika tidak muat, penulisan **gagal dengan error yang jelas** dan
-  file tidak di-commit. Inilah harga dari aturan "tanpa cache disk"; XCloudSSD tidak melanggarnya diam-diam.
-* Menulis ulang bagian awal file yang sedang di-stream (setelah > 64 MB terkirim) tidak didukung
+* **Menulis tidak berurutan secara lokal** (Steam/Epic menulis blok-blok yang sedikit acak dan tidak sejajar):
+  sejak v1.2.0 bagian yang sudah lengkap di-stream begitu celahnya terisi, dan jika buffer penuh penulisan
+  **menunggu** (maks. 120 detik) sampai upload membebaskan RAM, bukan langsung gagal. Akibatnya kecepatan install
+  = kecepatan upload internet Anda.
+* **Menulis sangat acak di file besar** (memory-mapped write, patch acak di seluruh file): data tertunda tetap
+  harus muat di buffer RAM. Jika tidak muat dalam waktu tunggu, penulisan **gagal dengan error yang jelas** dan
+  file tidak di-commit. Inilah harga aturan "tanpa cache disk"; XCloudSSD tidak melanggarnya diam-diam.
+  Buffer RAM default sekarang ¼ RAM fisik (1024–4096 MB); untuk install game disarankan 2048–4096 MB.
+* Menulis ulang bagian awal file yang sedang di-stream (setelah data terkirim) tidak didukung
   (`STATUS_NOT_SUPPORTED`).
+* Google Drive membatasi upload ±750 GB per akun per hari.
 
 ## Steam dan game
 * Steam bisa memakai drive ini sebagai library (drive dilaporkan sebagai disk tetap ber-filesystem "NTFS").
-  **Instalasi game besar lewat Steam belum diuji pada akun Google sungguhan** dan mungkin gagal karena pola tulis
-  acak di atas. Gunakan **Game Storage → Run storage check**, lalu uji satu game sebelum memindahkan library.
+  **Instalasi game besar lewat Steam belum diuji pada akun cloud sungguhan** (CI menguji pola tulisnya terhadap
+  provider di memori dan mount WinFsp nyata). Gunakan **Game Storage → Run storage check**, lalu uji satu game sebelum memindahkan library.
 * Kecepatan loading game = kecepatan jaringan + batas laju Google (range request ~ ratusan ms latensi).
   Game dengan banyak akses acak kecil akan terasa lambat; ini bukan SSD lokal.
 * Aplikasi Xbox (folder `WindowsApps`) butuh fitur NTFS yang tidak ada di filesystem virtual — tidak didukung.

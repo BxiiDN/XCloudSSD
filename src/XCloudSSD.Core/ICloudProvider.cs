@@ -65,3 +65,13 @@ public interface IRootOverride
 {
     void UseRootId(string rootId);
 }
+
+/// <summary>
+/// Local record of logical (reserved) sizes for providers that cannot store them in the cloud.
+/// Metadata only: file id → size. No file content.
+/// </summary>
+public interface ISparseSizeStore
+{
+    long? Get(string fileId);
+    void Set(string fileId, long? logicalSize);
+}

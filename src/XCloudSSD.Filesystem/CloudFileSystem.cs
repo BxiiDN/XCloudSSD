@@ -19,7 +19,13 @@ public sealed class FsOptions
     public bool ReportNtfs { get; set; } = true;
     public DeleteMode DeleteMode { get; set; } = DeleteMode.Trash;
     public int UploadChunkBytes { get; set; } = 16 << 20;
-    public long StreamingThresholdBytes { get; set; } = 64L << 20;
+    public long StreamingThresholdBytes { get; set; } = 8L << 20;
+
+    /// <summary>
+    /// How long a write may wait for RAM to free up (uploads finishing) before it fails. Waiting slows the
+    /// writing app down to the upload speed instead of failing it; nothing is spilled to disk meanwhile.
+    /// </summary>
+    public double BufferWaitSeconds { get; set; } = 120;
     /// <summary>How often failed commits held in RAM are retried.</summary>
     public TimeSpan CommitRetryInterval { get; set; } = TimeSpan.FromSeconds(15);
     /// <summary>Synchronous attempts at close before handing the commit to the background retry loop.</summary>
@@ -167,7 +173,7 @@ public sealed unsafe class CloudFileSystem : FileSystemBase, IDisposable
             : new CommitTarget(n.Id, null, null, n.StoredAttributes, n.Modified));
     }
 
-    private WriteOptions WriteOptionsFor() => new(Options.UploadChunkBytes, Options.StreamingThresholdBytes);
+    private WriteOptions WriteOptionsFor() => new(Options.UploadChunkBytes, Options.StreamingThresholdBytes, true, Options.BufferWaitSeconds);
 
     private static string Version(MetaNode n) => n.Md5 ?? n.Modified.UtcTicks.ToString();
 

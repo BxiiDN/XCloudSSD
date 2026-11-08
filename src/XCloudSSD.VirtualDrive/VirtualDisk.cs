@@ -137,7 +137,8 @@ public sealed class VirtualDisk : IDisposable
             int status;
             try
             {
-                status = host.Mount(mountPoint, null, false, 0);
+                // Extra dispatcher threads: a write waiting for RAM must not stall reads/listings on the same drive.
+                status = host.MountEx(mountPoint, 32, null, false, 0);
             }
             catch (TypeInitializationException ex)
             {
