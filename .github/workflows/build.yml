@@ -71,6 +71,26 @@ jobs:
           if ($p.ExitCode -ne 0) { Get-Content "$dir\error.txt" -ErrorAction SilentlyContinue; throw "UI self-test failed ($($p.ExitCode))" }
           Get-ChildItem $dir | Format-Table Name, Length
 
+      - name: Print UI screenshots (manual runs only, for remote review)
+        if: github.event_name == 'workflow_dispatch'
+        shell: powershell
+        run: |
+          Add-Type -AssemblyName System.Drawing
+          $codec = [System.Drawing.Imaging.ImageCodecInfo]::GetImageEncoders() | Where-Object { $_.MimeType -eq 'image/jpeg' }
+          $params = New-Object System.Drawing.Imaging.EncoderParameters 1
+          $params.Param[0] = New-Object System.Drawing.Imaging.EncoderParameter ([System.Drawing.Imaging.Encoder]::Quality), 70L
+          Get-ChildItem out\shots\*.png | ForEach-Object {
+            $img = [System.Drawing.Image]::FromFile($_.FullName)
+            $w = 1000; $h = [int]($img.Height * $w / $img.Width)
+            $bmp = New-Object System.Drawing.Bitmap $img, $w, $h
+            $ms = New-Object System.IO.MemoryStream
+            $bmp.Save($ms, $codec, $params)
+            Write-Output "SHOT-BEGIN $($_.BaseName)"
+            Write-Output ([Convert]::ToBase64String($ms.ToArray()))
+            Write-Output "SHOT-END"
+            $img.Dispose(); $bmp.Dispose()
+          }
+
       - name: Upload UI screenshots
         uses: actions/upload-artifact@v5
         with:
