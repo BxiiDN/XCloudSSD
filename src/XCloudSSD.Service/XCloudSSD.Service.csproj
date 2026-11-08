@@ -16,4 +16,16 @@
   <ItemGroup>
     <ProjectReference Include="..\XCloudSSD.VirtualDrive\XCloudSSD.VirtualDrive.csproj" />
   </ItemGroup>
+  <!--
+    winfsp-msil.dll verifies its own file version at start-up by reading its file on disk
+    (Assembly.Location). Inside a single-file bundle that path is empty and WinFsp fails to load,
+    so this one assembly is published next to XCloudSSDService.exe instead of inside it.
+  -->
+  <Target Name="KeepWinFspOutsideSingleFile" AfterTargets="ComputeResolvedFilesToPublishList">
+    <ItemGroup>
+      <ResolvedFileToPublish Update="@(ResolvedFileToPublish)" Condition="'%(Filename)%(Extension)' == 'winfsp-msil.dll'">
+        <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+      </ResolvedFileToPublish>
+    </ItemGroup>
+  </Target>
 </Project>

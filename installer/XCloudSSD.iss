@@ -52,6 +52,7 @@ Name: "startapp"; Description: "Start the XCloudSSD window in the tray at sign-i
 [Files]
 Source: "{#SourceDir}\XCloudSSD.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceDir}\XCloudSSDService.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#SourceDir}\winfsp-msil.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#RepoDir}\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#RepoDir}\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#RepoDir}\THIRD-PARTY-NOTICES.md"; DestDir: "{app}"; Flags: ignoreversion

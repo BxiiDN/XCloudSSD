@@ -62,6 +62,14 @@ jobs:
           dotnet publish src/XCloudSSD.Service/XCloudSSD.Service.csproj -c Release -r win-x64 --self-contained -o out/app
           Get-ChildItem out/app | Format-Table Name, Length
 
+      - name: WinFsp self-test of the published service exe (mount + unmount)
+        shell: pwsh
+        run: |
+          if (-not (Test-Path out/app/winfsp-msil.dll)) { throw "winfsp-msil.dll missing next to the service exe" }
+          $out = & out/app/XCloudSSDService.exe --selftest-winfsp
+          Write-Host $out
+          if ($LASTEXITCODE -ne 0) { throw "WinFsp self-test failed" }
+
       - name: UI self-test (open every page, render screenshots)
         shell: pwsh
         run: |
@@ -130,7 +138,7 @@ jobs:
         run: |
           $p = "out/portable/XCloudSSD"
           New-Item -ItemType Directory -Force $p | Out-Null
-          Copy-Item out/app/XCloudSSD.exe, out/app/XCloudSSDService.exe $p
+          Copy-Item out/app/XCloudSSD.exe, out/app/XCloudSSDService.exe, out/app/winfsp-msil.dll $p
           Copy-Item installer/portable/*.cmd $p
           Copy-Item deps/winfsp.msi "$p/winfsp.msi"
           Copy-Item README.md, LICENSE, THIRD-PARTY-NOTICES.md $p
@@ -149,6 +157,9 @@ jobs:
           Write-Host "Service status after install: $($svc.Status), start type: $($svc.StartType)"
           if ($svc.Status -ne 'Running') { throw "Service not running after install" }
           if (-not (Test-Path "$env:ProgramFiles\XCloudSSD\XCloudSSD.exe")) { throw "App not installed" }
+          $chk = & "$env:ProgramFiles\XCloudSSD\XCloudSSDService.exe" --selftest-winfsp
+          Write-Host "Installed service WinFsp check: $chk"
+          if ($LASTEXITCODE -ne 0) { throw "Installed service cannot load WinFsp" }
           $u = Start-Process "$env:ProgramFiles\XCloudSSD\unins000.exe" -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART" -Wait -PassThru
           Start-Sleep -Seconds 3
           if (Get-Service XCloudSSDService -ErrorAction SilentlyContinue) { throw "Service still registered after uninstall" }

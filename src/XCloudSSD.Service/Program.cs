@@ -8,6 +8,13 @@ using XCloudSSD.Security;
 using XCloudSSD.Service;
 using XCloudSSD.VirtualDrive;
 
+if (args.Contains("--selftest-winfsp"))
+{
+    var (ok, message) = WinFspSelfCheck.Run();
+    Console.WriteLine(message);
+    return ok ? 0 : 1;
+}
+
 var builder = Host.CreateApplicationBuilder(args);
 builder.Services.AddWindowsService(o => o.ServiceName = AppPaths.ServiceName);
 builder.Services.Configure<HostOptions>(o => o.ShutdownTimeout = TimeSpan.FromSeconds(90));
@@ -32,3 +39,4 @@ builder.Services.AddSingleton<ControlPipeServer>();
 builder.Services.AddHostedService<ServiceWorker>();
 
 await builder.Build().RunAsync();
+return 0;

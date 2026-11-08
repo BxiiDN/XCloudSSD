@@ -99,7 +99,17 @@ public sealed class VirtualDisk : IDisposable
         }
 
         if (Provider is IRootOverride ro) ro.UseRootId(rootId);
-        Mount(settings);
+        try
+        {
+            Mount(settings);
+        }
+        catch (Exception ex)
+        {
+            // Never leave the disk stuck in "Connecting": show the real reason.
+            SetState(ConnectionState.Error, ex.Message);
+            _log.LogError(ex, "Mount of {Letter}: failed", Account.DriveLetter);
+            throw;
+        }
         if (online) SetState(ConnectionState.Online);
         StartLoop();
     }
@@ -124,7 +134,21 @@ public sealed class VirtualDisk : IDisposable
             _fs = new CloudFileSystem(Provider, _tree, _cache, _budget, _transfers, Metrics, _log, options, () => Quota);
             var host = new FileSystemHost(_fs);
             var mountPoint = $"{char.ToUpperInvariant(Account.DriveLetter)}:";
-            var status = host.Mount(mountPoint, null, false, 0);
+            int status;
+            try
+            {
+                status = host.Mount(mountPoint, null, false, 0);
+            }
+            catch (TypeInitializationException ex)
+            {
+                _fs.Dispose();
+                _cache.Dispose();
+                _fs = null;
+                _cache = null;
+                throw new InvalidOperationException(
+                    "The WinFsp .NET layer could not start: " + (ex.InnerException?.Message ?? ex.Message) +
+                    " Reinstall XCloudSSD (it installs WinFsp 2.1 or newer).", ex);
+            }
             if (status < 0)
             {
                 host.Dispose();
