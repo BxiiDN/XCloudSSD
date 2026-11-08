@@ -23,13 +23,14 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
-      - name: Download WinFsp (latest official release)
+      - name: Download WinFsp 2.1 (official release, matches winfsp.net 2.1 binding)
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           New-Item -ItemType Directory -Force deps | Out-Null
-          gh release download --repo winfsp/winfsp --pattern "winfsp-*.msi" --dir deps
+          gh release download v2.1 --repo winfsp/winfsp --pattern "winfsp-2.1.*.msi" --dir deps
+          if ($LASTEXITCODE -ne 0) { gh release download --repo winfsp/winfsp --pattern "winfsp-2.1.*.msi" --dir deps }
           $msi = Get-ChildItem deps\winfsp-*.msi | Select-Object -First 1
           Copy-Item $msi.FullName deps\winfsp.msi
           "WINFSP_MSI_NAME=$($msi.Name)" | Out-File $env:GITHUB_ENV -Append

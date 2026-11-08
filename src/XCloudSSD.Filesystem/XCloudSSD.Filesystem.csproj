@@ -11,6 +11,6 @@
   </ItemGroup>
   <ItemGroup>
     <!-- Official WinFsp .NET binding (winfsp-msil.dll). Requires the WinFsp runtime to be installed. -->
-    <PackageReference Include="winfsp.net" Version="2.2.26286" />
+    <PackageReference Include="winfsp.net" Version="2.1.25156" />
   </ItemGroup>
 </Project>

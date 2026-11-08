@@ -89,13 +89,19 @@ Filename: "{sys}\sc.exe"; Parameters: "delete {#ServiceName}"; Flags: runhidden 
 Filename: "{sys}\taskkill.exe"; Parameters: "/IM XCloudSSD.exe /F"; Flags: runhidden waituntilterminated; RunOnceId: "KillApp"
 
 [Code]
+// WinFsp is installed (or upgraded) unless version 2.1 or newer is already present.
 function WinFspNeeded(): Boolean;
 var
-  Dir: String;
+  Dir, Dll: String;
+  MS, LS: Cardinal;
 begin
   Result := True;
   if RegQueryStringValue(HKLM32, 'SOFTWARE\WinFsp', 'InstallDir', Dir) then
-    Result := not FileExists(AddBackslash(Dir) + 'bin\winfsp-x64.dll');
+  begin
+    Dll := AddBackslash(Dir) + 'bin\winfsp-x64.dll';
+    if FileExists(Dll) and GetVersionNumbers(Dll, MS, LS) then
+      Result := (MS shr 16 < 2) or ((MS shr 16 = 2) and ((MS and $FFFF) < 1));
+  end;
 end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;
