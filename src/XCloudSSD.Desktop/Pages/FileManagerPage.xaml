@@ -11,24 +11,28 @@
                 <ComboBox x:Name="DriveBox" DockPanel.Dock="Left" Width="240" DisplayMemberPath="Title" SelectionChanged="DriveBox_SelectionChanged" />
                 <Button DockPanel.Dock="Left" Margin="8,0,0,0" Click="Up_Click" Content="{Binding [Up], Source={x:Static i:Loc.Instance}}" />
                 <Button DockPanel.Dock="Left" Margin="6,0,0,0" Click="Refresh_Click" Content="{Binding [Refresh], Source={x:Static i:Loc.Instance}}" />
-                <Button DockPanel.Dock="Right" Margin="6,0,0,0" Click="CloudSearch_Click" Content="{Binding [SearchCloud], Source={x:Static i:Loc.Instance}}" />
-                <TextBox x:Name="SearchBox" DockPanel.Dock="Right" Width="200" Margin="8,0,0,0" TextChanged="SearchBox_TextChanged"
-                         ToolTip="{Binding [FilterHint], Source={x:Static i:Loc.Instance}}" />
                 <TextBox x:Name="PathBox" Margin="8,0,0,0" KeyDown="PathBox_KeyDown" />
             </DockPanel>
 
-            <WrapPanel Margin="0,0,0,8">
-                <Button Style="{DynamicResource ToolButton}" Click="NewFolder_Click" Content="{Binding [NewFolder], Source={x:Static i:Loc.Instance}}" />
-                <Button Style="{DynamicResource ToolButton}" Click="NewFile_Click" Content="{Binding [NewFile], Source={x:Static i:Loc.Instance}}" />
-                <Button Style="{DynamicResource ToolButton}" Click="Upload_Click" Content="{Binding [Upload], Source={x:Static i:Loc.Instance}}" />
-                <Button Style="{DynamicResource ToolButton}" Click="Download_Click" Content="{Binding [Download], Source={x:Static i:Loc.Instance}}" />
-                <Button Style="{DynamicResource ToolButton}" Click="Copy_Click" Content="{Binding [Copy], Source={x:Static i:Loc.Instance}}" />
-                <Button Style="{DynamicResource ToolButton}" Click="Cut_Click" Content="{Binding [Cut], Source={x:Static i:Loc.Instance}}" />
-                <Button Style="{DynamicResource ToolButton}" Click="Paste_Click" Content="{Binding [Paste], Source={x:Static i:Loc.Instance}}" />
-                <Button Style="{DynamicResource ToolButton}" Click="Rename_Click" Content="{Binding [Rename], Source={x:Static i:Loc.Instance}}" />
-                <Button Style="{DynamicResource ToolButton}" Click="Delete_Click" Content="{Binding [Delete], Source={x:Static i:Loc.Instance}}" />
-                <Button Style="{DynamicResource ToolButton}" Click="Properties_Click" Content="{Binding [Properties], Source={x:Static i:Loc.Instance}}" />
-            </WrapPanel>
+            <DockPanel Margin="0,0,0,8">
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Top">
+                    <TextBox x:Name="SearchBox" Width="220" TextChanged="SearchBox_TextChanged"
+                             ToolTip="{Binding [FilterHint], Source={x:Static i:Loc.Instance}}" />
+                    <Button Margin="6,0,0,0" Click="CloudSearch_Click" Content="{Binding [SearchCloud], Source={x:Static i:Loc.Instance}}" />
+                </StackPanel>
+                <WrapPanel>
+                    <Button Style="{DynamicResource ToolButton}" Click="NewFolder_Click" Content="{Binding [NewFolder], Source={x:Static i:Loc.Instance}}" />
+                    <Button Style="{DynamicResource ToolButton}" Click="NewFile_Click" Content="{Binding [NewFile], Source={x:Static i:Loc.Instance}}" />
+                    <Button Style="{DynamicResource ToolButton}" Click="Upload_Click" Content="{Binding [Upload], Source={x:Static i:Loc.Instance}}" />
+                    <Button Style="{DynamicResource ToolButton}" Click="Download_Click" Content="{Binding [Download], Source={x:Static i:Loc.Instance}}" />
+                    <Button Style="{DynamicResource ToolButton}" Click="Copy_Click" Content="{Binding [Copy], Source={x:Static i:Loc.Instance}}" />
+                    <Button Style="{DynamicResource ToolButton}" Click="Cut_Click" Content="{Binding [Cut], Source={x:Static i:Loc.Instance}}" />
+                    <Button Style="{DynamicResource ToolButton}" Click="Paste_Click" Content="{Binding [Paste], Source={x:Static i:Loc.Instance}}" />
+                    <Button Style="{DynamicResource ToolButton}" Click="Rename_Click" Content="{Binding [Rename], Source={x:Static i:Loc.Instance}}" />
+                    <Button Style="{DynamicResource ToolButton}" Click="Delete_Click" Content="{Binding [Delete], Source={x:Static i:Loc.Instance}}" />
+                    <Button Style="{DynamicResource ToolButton}" Click="Properties_Click" Content="{Binding [Properties], Source={x:Static i:Loc.Instance}}" />
+                </WrapPanel>
+            </DockPanel>
         </StackPanel>
 
         <DockPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
@@ -39,7 +43,7 @@
         <Grid>
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="300" />
+                <ColumnDefinition Width="280" />
             </Grid.ColumnDefinitions>
             <ListView x:Name="Files" SelectionMode="Extended" AllowDrop="True"
                       MouseDoubleClick="Files_MouseDoubleClick" SelectionChanged="Files_SelectionChanged"
@@ -63,16 +67,16 @@
                 </ListView.ContextMenu>
                 <ListView.View>
                     <GridView>
-                        <GridViewColumn Width="340" DisplayMemberBinding="{Binding Name}">
+                        <GridViewColumn Width="280" DisplayMemberBinding="{Binding Name}">
                             <GridViewColumnHeader Tag="Name" Content="{Binding [ColName], Source={x:Static i:Loc.Instance}}" />
                         </GridViewColumn>
-                        <GridViewColumn Width="110" DisplayMemberBinding="{Binding SizeText}">
+                        <GridViewColumn Width="90" DisplayMemberBinding="{Binding SizeText}">
                             <GridViewColumnHeader Tag="Size" Content="{Binding [ColSize], Source={x:Static i:Loc.Instance}}" />
                         </GridViewColumn>
-                        <GridViewColumn Width="120" DisplayMemberBinding="{Binding TypeText}">
+                        <GridViewColumn Width="70" DisplayMemberBinding="{Binding TypeText}">
                             <GridViewColumnHeader Tag="Type" Content="{Binding [ColType], Source={x:Static i:Loc.Instance}}" />
                         </GridViewColumn>
-                        <GridViewColumn Width="170" DisplayMemberBinding="{Binding ModifiedText}">
+                        <GridViewColumn Width="140" DisplayMemberBinding="{Binding ModifiedText}">
                             <GridViewColumnHeader Tag="Modified" Content="{Binding [ColModified], Source={x:Static i:Loc.Instance}}" />
                         </GridViewColumn>
                         <GridViewColumn Width="300" DisplayMemberBinding="{Binding Location}">

@@ -53,7 +53,7 @@
                 <Border Style="{StaticResource Card}">
                     <StackPanel>
                         <TextBlock Style="{StaticResource StatLabel}" Text="{Binding [StatConnection], Source={x:Static i:Loc.Instance}}" />
-                        <TextBlock x:Name="Connection" Style="{StaticResource StatValue}" Text="—" />
+                        <TextBlock x:Name="Connection" Style="{StaticResource StatValue}" FontSize="20" TextWrapping="Wrap" Text="—" />
                     </StackPanel>
                 </Border>
             </UniformGrid>

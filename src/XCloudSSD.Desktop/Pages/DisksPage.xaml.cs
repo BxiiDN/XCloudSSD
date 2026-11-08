@@ -8,11 +8,11 @@ namespace XCloudSSD.Desktop.Pages;
 
 public partial class DisksPage : UserControl, IPage
 {
-    private string _sig = "";
+    private string? _sig;
 
     public DisksPage() => InitializeComponent();
 
-    public void OnShown() => _sig = "";
+    public void OnShown() => _sig = null;
 
     public void OnStatus(ServiceStatusDto? s)
     {
