@@ -35,6 +35,7 @@ public partial class MainWindow : Window
     protected override void OnClosing(CancelEventArgs e)
     {
         // Closing the window keeps XCloudSSD in the tray; the disks are served by the background service anyway.
+        if (App.Exiting) return;
         e.Cancel = true;
         Hide();
     }

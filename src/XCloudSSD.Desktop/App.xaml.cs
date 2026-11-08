@@ -19,6 +19,8 @@ public partial class App : Application
     private System.Windows.Forms.NotifyIcon? _tray;
 
     public static DesktopSettings Prefs { get; private set; } = new();
+    /// <summary>True once the app is really exiting (closing the main window normally only hides it).</summary>
+    public static bool Exiting { get; private set; }
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -51,6 +53,14 @@ public partial class App : Application
         Loc.Instance.Load(lang);
         ApplyTheme(Prefs.Theme);
 
+        var shotIndex = Array.IndexOf(e.Args, "--selftest-screenshots");
+        if (shotIndex >= 0 && shotIndex + 1 < e.Args.Length)
+        {
+            ServiceHub.Start();
+            RunScreenshotSelfTest(e.Args[shotIndex + 1]);
+            return;
+        }
+
         ServiceHub.Start();
         var main = new MainWindow();
         MainWindow = main;
@@ -65,6 +75,43 @@ public partial class App : Application
         waiter.Start();
 
         if (!e.Args.Contains("--tray")) main.Show();
+    }
+
+    /// <summary>
+    /// CI self-test: opens every page, renders it to a PNG and exits with 0, or 1 if any page fails to load.
+    /// </summary>
+    private async void RunScreenshotSelfTest(string dir)
+    {
+        var code = 0;
+        try
+        {
+            System.IO.Directory.CreateDirectory(dir);
+            var main = new MainWindow { Width = 1280, Height = 800 };
+            MainWindow = main;
+            main.Show();
+            foreach (var tag in new[] { "dashboard", "disks", "accounts", "files", "games", "transfers", "performance", "settings" })
+            {
+                main.Navigate(tag);
+                await System.Threading.Tasks.Task.Delay(700);
+                main.UpdateLayout();
+                var dpi = VisualTreeHelper.GetDpi(main);
+                var bmp = new System.Windows.Media.Imaging.RenderTargetBitmap(
+                    (int)(main.ActualWidth * dpi.DpiScaleX), (int)(main.ActualHeight * dpi.DpiScaleY),
+                    96 * dpi.DpiScaleX, 96 * dpi.DpiScaleY, PixelFormats.Pbgra32);
+                bmp.Render(main);
+                var enc = new System.Windows.Media.Imaging.PngBitmapEncoder();
+                enc.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bmp));
+                using var fs = System.IO.File.Create(System.IO.Path.Combine(dir, $"{tag}.png"));
+                enc.Save(fs);
+            }
+        }
+        catch (Exception ex)
+        {
+            System.IO.File.WriteAllText(System.IO.Path.Combine(dir, "error.txt"), ex.ToString());
+            code = 1;
+        }
+        Exiting = true;
+        Shutdown(code);
     }
 
     public static void ShowMain(Window main)
@@ -98,6 +145,7 @@ public partial class App : Application
 
     public void ExitApp()
     {
+        Exiting = true;
         if (_tray is not null)
         {
             _tray.Visible = false;

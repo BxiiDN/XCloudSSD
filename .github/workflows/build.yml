@@ -62,6 +62,21 @@ jobs:
           dotnet publish src/XCloudSSD.Service/XCloudSSD.Service.csproj -c Release -r win-x64 --self-contained -o out/app
           Get-ChildItem out/app | Format-Table Name, Length
 
+      - name: UI self-test (open every page, render screenshots)
+        shell: pwsh
+        run: |
+          $dir = "$PWD\out\shots"
+          $p = Start-Process out/app/XCloudSSD.exe -ArgumentList "--selftest-screenshots", $dir -PassThru
+          if (-not $p.WaitForExit(120000)) { $p.Kill(); throw "UI self-test hung" }
+          if ($p.ExitCode -ne 0) { Get-Content "$dir\error.txt" -ErrorAction SilentlyContinue; throw "UI self-test failed ($($p.ExitCode))" }
+          Get-ChildItem $dir | Format-Table Name, Length
+
+      - name: Upload UI screenshots
+        uses: actions/upload-artifact@v5
+        with:
+          name: ui-screenshots
+          path: out/shots/*.png
+
       - name: Service smoke test (install as real Windows service, query control pipe)
         shell: pwsh
         run: |
