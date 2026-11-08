@@ -1,5 +1,17 @@
 # Hasil pengujian
 
+## Pembaruan v1.1.0 — run https://github.com/BxiiDN/XCloudSSD/actions/runs/42485724277 (sukses)
+
+* Unit test 33/33, integration test WinFsp 11/11, self-test WinFsp dari exe yang dipublikasi dan yang terinstal: OK.
+* `SteamReserveSpace_IsInstant_AndNothingIsUploaded`: 10 file × 2 GiB (20 GiB) "dipesan" lewat `SetLength`
+  dalam 0,77 detik, **0 byte diunggah**; ukuran tetap 2 GiB di Windows; pengisian berurutan 48 MiB setelahnya
+  hanya mengunggah data asli; bagian yang belum ditulis terbaca nol; RAM ≤ 32 MiB.
+* Sparse lewat penulisan nol: 256 MiB nol melalui RAM 8 MiB → 0 byte diunggah.
+* TeraBox (protokol terhadap server terskrip, **bukan akun asli**): jsToken dibaca dan diperbarui saat errno
+  4000023, parameter umum `app_id/web/channel/clienttype/jsToken`, alur upload precreate → superfile2 → create,
+  sesi yang sudah logout dilaporkan sebagai "perlu login", algoritma `sign` cocok dengan port AList.
+
+
 Semua angka di bawah berasal dari run CI nyata, bukan perkiraan.
 
 * Run: https://github.com/BxiiDN/XCloudSSD/actions/runs/42481550509 (commit `3af9d3a`, 8 Nov 2026) — **sukses**
