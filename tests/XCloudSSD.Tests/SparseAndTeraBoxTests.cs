@@ -144,6 +144,67 @@ public class TeraBoxProtocolTests
         Assert.Equal(2, h.Requests.Count(r => r.Req.RequestUri!.AbsolutePath == "/main"));
     }
 
+    [Theory]
+    [InlineData("https://www.terabox.com", "jp", "terabox.com")]
+    [InlineData("https://dm.terabox.com", "dm", "terabox.com")]
+    [InlineData("https://www.1024tera.com", "jp", "1024tera.com")]
+    [InlineData("https://www.1024terabox.com", "jp", "1024terabox.com")]
+    public void UploadRegion_FollowsSignedInDomain(string baseUrl, string prefix, string root)
+    {
+        Assert.Equal((prefix, root), TeraBoxWebProvider.RegionOf(baseUrl));
+    }
+
+    [Fact]
+    public async Task Upload_UsesAccountsOwnDomain_AndSkipsServersThatSayUserNotExists()
+    {
+        // Session signed in on www.1024tera.com: servers on terabox.com answer 403 errno 31045 "user not exists".
+        var h = new Scripted();
+        h.Respond = (req, body) =>
+        {
+            var uri = req.RequestUri!;
+            if (uri.AbsolutePath == "/rest/2.0/pcs/file") return Json("""{"host":"c-jp.terabox.com"}""");
+            if (uri.AbsolutePath == "/api/precreate") return Json("""{"errno":0,"uploadid":"UP1","return_type":1,"block_list":[0]}""");
+            if (uri.AbsolutePath == "/rest/2.0/pcs/superfile2")
+                return uri.Host.EndsWith("1024tera.com")
+                    ? Json("""{"md5":"x"}""")
+                    : new HttpResponseMessage(HttpStatusCode.Forbidden) { Content = new StringContent("""{"error_code":31045,"error_msg":"user not exists","request_id":1}""") };
+            if (uri.AbsolutePath == "/api/create") return Json("""{"errno":0}""");
+            if (uri.AbsolutePath == "/api/list") return Json("""{"errno":0,"list":[{"fs_id":7,"server_filename":"g.bin","isdir":0,"size":10,"server_mtime":1700000000}]}""");
+            return Json("""{"errno":0}""");
+        };
+        var p = new TeraBoxWebProvider("ndus=abc", new Metrics(), h, jsToken: "T", baseUrl: "https://www.1024tera.com");
+        await p.InitializeAsync(default);
+        var up = await p.BeginUploadAsync(UploadTarget.NewFile(p.RootId, "g.bin"), default);
+        await up.CompleteAsync(new byte[10], 10, default);
+
+        var locate = h.Requests.First(r => r.Req.RequestUri!.AbsolutePath == "/rest/2.0/pcs/file").Req;
+        Assert.Equal("jp-data.1024tera.com", locate.RequestUri!.Host);
+        var part = h.Requests.Last(r => r.Req.RequestUri!.AbsolutePath == "/rest/2.0/pcs/superfile2").Req;
+        Assert.Equal("c-jp.1024tera.com", part.RequestUri!.Host);
+        Assert.Contains("ndus=abc", part.Headers.GetValues("Cookie").Single());
+    }
+
+    [Fact]
+    public async Task Upload_WhenNoServerKnowsTheUser_AsksToSignInAgain()
+    {
+        var h = new Scripted();
+        h.Respond = (req, body) =>
+        {
+            var path = req.RequestUri!.AbsolutePath;
+            if (path == "/rest/2.0/pcs/file") return Json("""{"host":"c-jp.terabox.com"}""");
+            if (path == "/api/precreate") return Json("""{"errno":0,"uploadid":"UP1","return_type":1,"block_list":[0]}""");
+            if (path == "/rest/2.0/pcs/superfile2")
+                return new HttpResponseMessage(HttpStatusCode.Forbidden) { Content = new StringContent("""{"error_code":31045,"error_msg":"user not exists"}""") };
+            return Json("""{"errno":0,"list":[]}""");
+        };
+        var p = new TeraBoxWebProvider("ndus=abc", new Metrics(), h, jsToken: "T");
+        await p.InitializeAsync(default);
+        var up = await p.BeginUploadAsync(UploadTarget.NewFile(p.RootId, "x.bin"), default);
+        var ex = await Assert.ThrowsAsync<CloudException>(() => up.CompleteAsync(new byte[10], 10, default));
+        Assert.Equal(CloudErrorKind.Unauthorized, ex.Kind);
+        Assert.Contains("add it again", ex.Message);
+    }
+
     [Fact]
     public async Task Upload_Precreate_Parts_Create()
     {

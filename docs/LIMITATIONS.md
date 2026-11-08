@@ -13,7 +13,7 @@ XCloudSSD sekarang menambahkan akun TeraBox dengan cara ini:
   sendiri atas risiko sendiri.
 * Batasan: tidak ada change feed (folder diperbarui berkala), atribut Windows tidak tersimpan di TeraBox; ukuran
   ruang "reserved" (sparse) hanya dicatat di PC ini (`sparse-<akun>.json`, metadata saja — bukan isi file), hapus = masuk recycle bin TeraBox, pencarian hanya pada folder yang sudah dibuka,
-  akun gratis membatasi satu file maks. 4 GB, file di wilayah dengan domain selain terabox.com belum didukung.
+  akun gratis membatasi satu file maks. 4 GB, server upload dipilih sesuai domain login (terabox.com, 1024tera.com, …).
 
 ## Google Drive tidak bisa menulis sebagian file
 Drive menyimpan file sebagai objek utuh. Konsekuensi tanpa cache disk:

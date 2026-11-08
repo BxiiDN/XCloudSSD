@@ -1,5 +1,9 @@
 # Hasil pengujian
 
+## Pembaruan v1.2.1 — upload TeraBox "31045 user not exists"
+* Server upload TeraBox dipilih sesuai domain & region akun (mis. `jp-data.1024tera.com` untuk akun di
+  www.1024tera.com), lalu dicoba server lain bila menjawab 31045. Diuji terhadap server terskrip, **bukan akun asli**.
+
 ## Pembaruan v1.2.0 — perbaikan install game — run https://github.com/BxiiDN/XCloudSSD/actions/runs/42494295440 (sukses)
 
 * Unit test 40/40, integration test WinFsp 11/11, service smoke 1/1, installer + portable dibangun, install/uninstall senyap OK.

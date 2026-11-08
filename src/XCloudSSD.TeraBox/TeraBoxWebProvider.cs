@@ -35,7 +35,7 @@ public sealed class TeraBoxWebProvider : ICloudProvider, IRootOverride
     private readonly SemaphoreSlim _tokenGate = new(1, 1);
     private string _baseUrl = "https://www.terabox.com";
     private string? _jsToken;
-    private string? _uploadHost;
+    private IReadOnlyList<string>? _uploadHosts;
 
     public TeraBoxWebProvider(string cookie, Metrics metrics, HttpMessageHandler? handler = null,
         string? jsToken = null, string? baseUrl = null, ISparseSizeStore? sparse = null)
@@ -477,22 +477,77 @@ public sealed class TeraBoxWebProvider : ICloudProvider, IRootOverride
         return Task.FromResult<IUploadSession>(new TeraBoxUploadSession(this, parentId, name, overwrite: target.ExistingFileId is not null));
     }
 
-    internal async Task<string> UploadHostAsync(CancellationToken ct)
+    /// <summary>
+    /// TeraBox serves accounts from regional clusters on several domains (terabox.com, 1024tera.com, …). The upload
+    /// server must belong to the account's cluster and domain, or it answers 403 errno 31045 "user not exists".
+    /// Like the TeraBox web client (and AList), ask &lt;prefix&gt;-data.&lt;domain&gt; where to upload, using the
+    /// prefix and domain of the signed-in page.
+    /// </summary>
+    internal static (string Prefix, string Root) RegionOf(string baseUrl)
     {
-        if (_uploadHost is not null) return _uploadHost;
-        try
+        var host = Uri.TryCreate(baseUrl, UriKind.Absolute, out var u) ? u.Host.ToLowerInvariant() : "www.terabox.com";
+        var labels = host.Split('.');
+        var root = labels.Length >= 2 ? $"{labels[^2]}.{labels[^1]}" : "terabox.com";
+        var prefix = labels.Length >= 3 && labels[0] is not ("www" or "") ? labels[0] : "jp";
+        return (prefix, root);
+    }
+
+    internal async Task<IReadOnlyList<string>> UploadHostsAsync(CancellationToken ct)
+    {
+        lock (_mapLock)
+            if (_uploadHosts is not null) return _uploadHosts;
+        var (prefix, root) = RegionOf(_baseUrl);
+        var locators = new List<string> { $"{prefix}-data.{root}" };
+        if (root != "terabox.com") locators.Add($"{prefix}-data.terabox.com");
+        if (prefix != "jp") locators.Add($"jp-data.{root}");
+        locators.Add("d.terabox.com");
+
+        var hosts = new List<string>();
+        foreach (var locator in locators.Distinct())
         {
-            using var req = NewRequest(HttpMethod.Get, "https://d.terabox.com/rest/2.0/pcs/file?method=locateupload");
-            using var resp = await SendRawAsync(req, ct).ConfigureAwait(false);
-            var json = JsonNode.Parse(await resp.Content.ReadUtf8Async(ct).ConfigureAwait(false));
-            var host = json?["host"]?.GetValue<string>();
-            _uploadHost = string.IsNullOrEmpty(host) ? "c-all.terabox.com" : host;
+            try
+            {
+                using var req = NewRequest(HttpMethod.Get, $"https://{locator}/rest/2.0/pcs/file?method=locateupload");
+                using var resp = await SendRawAsync(req, ct).ConfigureAwait(false);
+                var json = JsonNode.Parse(await resp.Content.ReadUtf8Async(ct).ConfigureAwait(false));
+                var host = json?["host"]?.GetValue<string>()?.Trim();
+                if (string.IsNullOrEmpty(host) || !IsTeraBoxHost(host)) continue;
+                AddHost(hosts, host, root);
+            }
+            catch (Exception ex) when (ex is HttpRequestException or JsonException or InvalidOperationException or CloudException)
+            {
+                // DNS name not used by this cluster, or no answer: try the next locator.
+            }
         }
-        catch (Exception ex) when (ex is HttpRequestException or JsonException or CloudException)
+        AddHost(hosts, $"c-{prefix}.{root}", root);
+        AddHost(hosts, $"c-all.{root}", root);
+        AddHost(hosts, "c-all.terabox.com", root);
+        lock (_mapLock) _uploadHosts ??= hosts;
+        return _uploadHosts;
+    }
+
+    /// <summary>Adds an upload host; a host on another TeraBox domain is tried on the account's own domain first.</summary>
+    private static void AddHost(List<string> hosts, string host, string root)
+    {
+        var labels = host.Split('.');
+        if (labels.Length >= 3)
         {
-            _uploadHost = "c-all.terabox.com";
+            var sameDomain = $"{string.Join('.', labels[..^2])}.{root}";
+            if (!hosts.Contains(sameDomain, StringComparer.OrdinalIgnoreCase)) hosts.Add(sameDomain);
         }
-        return _uploadHost;
+        if (!hosts.Contains(host, StringComparer.OrdinalIgnoreCase)) hosts.Add(host);
+    }
+
+    private void PreferUploadHost(string host)
+    {
+        lock (_mapLock)
+        {
+            if (_uploadHosts is null || _uploadHosts[0] == host) return;
+            var list = _uploadHosts.ToList();
+            list.Remove(host);
+            list.Insert(0, host);
+            _uploadHosts = list;
+        }
     }
 
     internal async Task<string> PrecreateAsync(string path, string dir, string firstBlockMd5, CancellationToken ct)
@@ -511,7 +566,35 @@ public sealed class TeraBoxWebProvider : ICloudProvider, IRootOverride
     internal async Task UploadPartAsync(string path, string uploadId, int partSeq, ReadOnlyMemory<byte> data, CancellationToken ct)
     {
         await BandwidthThrottle.Upload.WaitAsync(data.Length, ct).ConfigureAwait(false);
-        var host = await UploadHostAsync(ct).ConfigureAwait(false);
+        var hosts = await UploadHostsAsync(ct).ConfigureAwait(false);
+        CloudException? wrongCluster = null;
+        foreach (var host in hosts)
+        {
+            try
+            {
+                await UploadPartToAsync(host, path, uploadId, partSeq, data, ct).ConfigureAwait(false);
+                PreferUploadHost(host);
+                return;
+            }
+            catch (CloudException ex) when (IsWrongCluster(ex))
+            {
+                wrongCluster = ex; // this server does not know the account: try the next one
+            }
+            catch (HttpRequestException ex) when (ex.HttpRequestError == HttpRequestError.NameResolutionError)
+            {
+                // host name not used by this domain
+            }
+        }
+        throw new CloudException(CloudErrorKind.Unauthorized,
+            "No TeraBox upload server accepted this session (" + (wrongCluster?.Message ?? "no upload server reachable") +
+            "). Remove the TeraBox account in XCloudSSD and add it again (sign in once more).");
+    }
+
+    private static bool IsWrongCluster(CloudException ex) =>
+        ex.Message.Contains("31045", StringComparison.Ordinal) || ex.Message.Contains("user not exists", StringComparison.OrdinalIgnoreCase);
+
+    private async Task UploadPartToAsync(string host, string path, string uploadId, int partSeq, ReadOnlyMemory<byte> data, CancellationToken ct)
+    {
         await Retry.RunAsync(async _ =>
         {
             var q = Query(new()
@@ -519,10 +602,10 @@ public sealed class TeraBoxWebProvider : ICloudProvider, IRootOverride
                 ["method"] = "upload",
                 ["path"] = path,
                 ["uploadid"] = uploadId,
-                ["uploadsign"] = "0",
                 ["partseq"] = partSeq.ToString(CultureInfo.InvariantCulture),
             });
             using var req = NewRequest(HttpMethod.Post, $"https://{host}/rest/2.0/pcs/superfile2?{q}");
+            req.Headers.TryAddWithoutValidation("Origin", _baseUrl);
             var form = new MultipartFormDataContent();
             var file = new ReadOnlyMemoryContent(data);
             file.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
@@ -531,9 +614,13 @@ public sealed class TeraBoxWebProvider : ICloudProvider, IRootOverride
             using var resp = await SendRawAsync(req, ct).ConfigureAwait(false);
             var body = await resp.Content.ReadUtf8Async(ct).ConfigureAwait(false);
             if (!resp.IsSuccessStatusCode)
-                throw new CloudException(Retry.KindForStatus(resp.StatusCode), $"TeraBox part upload failed: {(int)resp.StatusCode} {Trim(body)}", (int)resp.StatusCode);
+                throw new CloudException(Retry.KindForStatus(resp.StatusCode), $"TeraBox part upload failed ({host}): {(int)resp.StatusCode} {Trim(body)}", (int)resp.StatusCode);
             var errno = TryErrno(body);
-            if (errno is { } e && e != 0) throw new CloudException(CloudErrorKind.Transient, $"TeraBox part upload errno {e}: {Trim(body)}");
+            if (errno is { } e && e != 0)
+            {
+                if (e == 31045) throw new CloudException(CloudErrorKind.Forbidden, $"TeraBox part upload failed ({host}): errno 31045 user not exists");
+                throw new CloudException(CloudErrorKind.Transient, $"TeraBox part upload errno {e}: {Trim(body)}");
+            }
             _metrics.AddUp(data.Length);
         }, 5, ct).ConfigureAwait(false);
     }
@@ -647,7 +734,8 @@ public sealed class TeraBoxWebProvider : ICloudProvider, IRootOverride
     {
         try
         {
-            return JsonNode.Parse(body)?["errno"]?.GetValue<int>();
+            var n = JsonNode.Parse(body);
+            return n?["errno"]?.GetValue<int>() ?? n?["error_code"]?.GetValue<int>();
         }
         catch (Exception)
         {
