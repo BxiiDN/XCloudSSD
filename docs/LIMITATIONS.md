@@ -1,15 +1,19 @@
 # Keterbatasan yang diketahui (jujur)
 
-## TeraBox — belum bisa dipasang
-TeraBox menyediakan API resmi bernama **TeraBox Open Platform**, tetapi aksesnya hanya untuk partner atas
-permintaan (formulir kontak / e-mail ke TeraBox) dan dokumentasi endpoint-nya tidak dapat dibaca publik
-(https://www.terabox.com/integrations/docs). Proyek lain biasanya memakai API web privat dengan cookie `ndus`
-dari browser — ini dilarang oleh spesifikasi XCloudSSD (tidak boleh endpoint fiktif / ambil cookie diam-diam).
-
-Maka: tombol **Add TeraBox account** menjelaskan hal ini dan membuka situs resmi TeraBox / halaman Open Platform.
-`XCloudSSD.TeraBox` melaporkan kemampuan `CanMount = false`. Begitu kredensial Open Platform dan dokumentasinya
-tersedia, adapter cukup mengimplementasikan `ICloudProvider` — struktur multi-akun, drive per akun, dan UI
-sudah siap.
+## TeraBox — eksperimental, lewat antarmuka web (tidak resmi)
+TeraBox tidak menyediakan API publik untuk aplikasi (Open Platform hanya untuk partner). Atas permintaan pengguna,
+XCloudSSD sekarang menambahkan akun TeraBox dengan cara ini:
+* Login dilakukan **di dalam aplikasi** pada halaman resmi terabox.com (WebView2). XCloudSSD tidak melihat password.
+  Setelah login, cookie sesi (`ndus`) disimpan terenkripsi DPAPI oleh service dan hanya dikirim ke terabox.com.
+  Profil browser sementara dihapus setelah login.
+* Operasi file memakai antarmuka web yang sama dengan situs TeraBox, mengikuti driver open-source AList
+  (`/api/list`, `/api/quota`, `/api/filemanager`, `/api/create`, `/api/precreate`, `superfile2`, `/api/download`).
+* **Belum diuji dengan akun TeraBox sungguhan.** Protokolnya diuji terhadap server terskrip di CI. TeraBox bisa
+  mengubah antarmuka ini kapan saja, dan akses otomatis mungkin melanggar ketentuan TeraBox — gunakan dengan akun
+  sendiri atas risiko sendiri.
+* Batasan: tidak ada change feed (folder diperbarui berkala), atribut Windows dan ruang "reserved" (sparse) tidak
+  tersimpan di TeraBox, hapus = masuk recycle bin TeraBox, pencarian hanya pada folder yang sudah dibuka,
+  akun gratis membatasi satu file maks. 4 GB, file di wilayah dengan domain selain terabox.com belum didukung.
 
 ## Google Drive tidak bisa menulis sebagian file
 Drive menyimpan file sebagai objek utuh. Konsekuensi tanpa cache disk:
@@ -17,6 +21,9 @@ Drive menyimpan file sebagai objek utuh. Konsekuensi tanpa cache disk:
   ukuran file tidak dibatasi RAM.
 * **Mengubah sebagian file yang sudah ada** (save game, config): bekerja, tetapi seluruh file diunggah ulang saat
   ditutup. Wajar untuk file kecil–menengah, lambat untuk file besar.
+* **Ruang yang dipesan (sparse)**: file yang dibuat dengan ukuran akhir tetapi belum diisi (Steam "Reserving space",
+  `SetLength`, atau ditulis nol) tidak diunggah. Ukurannya dicatat di metadata Google Drive (`appProperties`) dan
+  bagian kosongnya dibaca sebagai nol. Saat diisi berurutan setelahnya, data asli di-stream ke cloud.
 * **Menulis file besar secara tidak berurutan** (mis. downloader Steam yang menulis chunk acak, memory-mapped write):
   semua data tertunda harus muat di buffer RAM. Jika tidak muat, penulisan **gagal dengan error yang jelas** dan
   file tidak di-commit. Inilah harga dari aturan "tanpa cache disk"; XCloudSSD tidak melanggarnya diam-diam.

@@ -18,7 +18,10 @@ public sealed class MetaNode
     public string Id { get; internal set; }
     public string Name { get; internal set; }
     public bool IsFolder { get; }
+    /// <summary>Logical size seen by Windows.</summary>
     public long Size { get; set; }
+    /// <summary>Bytes stored in the cloud; the rest up to <see cref="Size"/> is a sparse zero tail.</summary>
+    public long ContentSize { get; set; }
     public DateTimeOffset Created { get; set; }
     public DateTimeOffset Modified { get; set; }
     public DateTimeOffset Accessed { get; set; }
@@ -60,6 +63,7 @@ public sealed class MetaNode
         if (!IsFolder && PendingWriters == 0)
         {
             Size = item.Size;
+            ContentSize = item.ContentLength;
             Md5 = item.Md5;
         }
         Created = item.Created;

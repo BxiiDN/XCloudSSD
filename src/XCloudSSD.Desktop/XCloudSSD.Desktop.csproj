@@ -23,6 +23,10 @@
     <ProjectReference Include="..\XCloudSSD.TeraBox\XCloudSSD.TeraBox.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <!-- In-app TeraBox sign-in (Edge WebView2 runtime is part of Windows 11 / current Windows 10). -->
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2903.40" />
+  </ItemGroup>
+  <ItemGroup>
     <EmbeddedResource Include="Languages\*.json" />
     <Resource Include="Assets\xcloudssd.ico" />
   </ItemGroup>

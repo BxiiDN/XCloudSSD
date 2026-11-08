@@ -50,7 +50,12 @@ public sealed class CloudItem
     public required string Id { get; init; }
     public required string Name { get; init; }
     public bool IsFolder { get; init; }
+    /// <summary>Logical file size seen by Windows (may include a sparse zero tail).</summary>
     public long Size { get; init; }
+    /// <summary>Bytes actually stored in the cloud. Null = same as <see cref="Size"/>.</summary>
+    public long? StoredSize { get; init; }
+    /// <summary>Bytes readable from the cloud; anything after this up to <see cref="Size"/> reads as zeros.</summary>
+    public long ContentLength => StoredSize ?? Size;
     public DateTimeOffset Created { get; init; }
     public DateTimeOffset Modified { get; init; }
     public string? Md5 { get; init; }
@@ -68,6 +73,11 @@ public sealed class MetadataUpdate
     public string? RemoveParentId { get; init; }
     public uint? WindowsAttributes { get; init; }
     public DateTimeOffset? Modified { get; init; }
+    /// <summary>
+    /// Logical size to record for a sparse file (reserved space that has not been written yet).
+    /// The stored content stays shorter; the remainder reads as zeros and is never uploaded.
+    /// </summary>
+    public long? LogicalSize { get; init; }
 }
 
 public sealed record UploadTarget(string? ExistingFileId, string? ParentId, string? Name, uint? WindowsAttributes, DateTimeOffset? Modified)

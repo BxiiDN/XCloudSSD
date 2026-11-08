@@ -150,7 +150,7 @@ public sealed unsafe class CloudFileSystem : FileSystemBase, IDisposable
             var n = s.Node;
             var session = n.IsLocalOnly
                 ? new WriteSession(_provider, _budget, _cache, WriteOptionsFor(), null, null, 0)
-                : new WriteSession(_provider, _budget, _cache, WriteOptionsFor(), n.Id, Version(n), n.Size);
+                : new WriteSession(_provider, _budget, _cache, WriteOptionsFor(), n.Id, Version(n), n.ContentSize, n.Size);
             Interlocked.Increment(ref n.PendingWriters);
             BindStreamTarget(s, session);
             s.Session = session;
@@ -432,7 +432,12 @@ public sealed unsafe class CloudFileSystem : FileSystemBase, IDisposable
             }
             else
             {
-                got = _cache.Read(n.Id, Version(n), n.Size, (long)offset, dest, h.Pattern, Ct);
+                // Sparse files: bytes after the stored content (reserved space) read as zeros.
+                var want = (int)Math.Min(dest.Length, size - (long)offset);
+                var fromCloud = (int)Math.Clamp(n.ContentSize - (long)offset, 0, want);
+                got = fromCloud > 0 ? _cache.Read(n.Id, Version(n), n.ContentSize, (long)offset, dest[..fromCloud], h.Pattern, Ct) : 0;
+                if (got < want) dest[got..want].Clear();
+                got = want;
             }
             bytesTransferred = (uint)got;
             _metrics.FsRead(got);
@@ -823,6 +828,7 @@ public sealed unsafe class CloudFileSystem : FileSystemBase, IDisposable
                     if (wasLocal) _tree.Rekey(n, item.Id);
                     ReconcileAfterCommit(n, item);
                     n.Size = item.Size;
+                    n.ContentSize = item.ContentLength;
                     n.Md5 = item.Md5;
                 }
                 lock (s)

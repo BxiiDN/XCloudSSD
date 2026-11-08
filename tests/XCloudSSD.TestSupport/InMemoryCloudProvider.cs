@@ -17,6 +17,7 @@ public sealed class InMemoryCloudProvider : ICloudProvider
         public bool IsFolder;
         public string? Parent;
         public byte[] Content = Array.Empty<byte>();
+        public long Logical;
         public uint? Attrs;
         public DateTimeOffset Created = DateTimeOffset.UtcNow;
         public DateTimeOffset Modified = DateTimeOffset.UtcNow;
@@ -65,7 +66,8 @@ public sealed class InMemoryCloudProvider : ICloudProvider
         Id = o.Id,
         Name = o.Name,
         IsFolder = o.IsFolder,
-        Size = o.Content.LongLength,
+        Size = Math.Max(o.Content.LongLength, o.Logical),
+        StoredSize = o.Content.LongLength,
         Created = o.Created,
         Modified = o.Modified,
         Md5 = o.IsFolder ? null : Convert.ToHexStringLower(MD5.HashData(o.Content)),
@@ -177,6 +179,7 @@ public sealed class InMemoryCloudProvider : ICloudProvider
             if (u.AddParentId is not null) o.Parent = u.AddParentId;
             if (u.WindowsAttributes is { } a) o.Attrs = a;
             if (u.Modified is { } m) o.Modified = m;
+            if (u.LogicalSize is { } l) o.Logical = l;
             Record(o);
             return ToItem(o);
         }
@@ -237,6 +240,21 @@ public sealed class InMemoryCloudProvider : ICloudProvider
 
     public bool Exists(string path) => ContentAt(path) is not null;
 
+    /// <summary>Logical (Windows-visible) size recorded for the object at a path.</summary>
+    public long LogicalSizeAt(string path)
+    {
+        lock (_lock)
+        {
+            var cur = "root-id";
+            foreach (var part in path.Split('/', '\\', StringSplitOptions.RemoveEmptyEntries))
+                cur = _objects.Values.First(o => o.Parent == cur && !o.Trashed && o.Name == part).Id;
+            return Math.Max(_objects[cur].Content.LongLength, _objects[cur].Logical);
+        }
+    }
+
+    public long BytesUploaded => Interlocked.Read(ref _bytesUploaded);
+    private long _bytesUploaded;
+
     public CloudItem Seed(string parentId, string name, byte[] content)
     {
         lock (_lock)
@@ -279,6 +297,7 @@ public sealed class InMemoryCloudProvider : ICloudProvider
             if (data.Length % Granularity != 0) throw new ArgumentException("Chunk not aligned to 256 KiB.");
             Fault();
             _data.Write(data.Span);
+            Interlocked.Add(ref owner._bytesUploaded, data.Length);
             return Task.CompletedTask;
         }
 
@@ -288,6 +307,7 @@ public sealed class InMemoryCloudProvider : ICloudProvider
             if (_data.Length + finalData.Length != totalSize) throw new ArgumentException("Size mismatch.");
             Fault();
             _data.Write(finalData.Span);
+            Interlocked.Add(ref owner._bytesUploaded, finalData.Length);
             _done = true;
             lock (owner._lock)
             {

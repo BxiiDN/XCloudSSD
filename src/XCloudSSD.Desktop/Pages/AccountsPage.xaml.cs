@@ -27,7 +27,7 @@ public partial class AccountsPage : UserControl, IPage
     private static string Id(object sender) => (string)((FrameworkElement)sender).Tag;
 
     private async void AddGoogle_Click(object sender, RoutedEventArgs e) => await AccountActions.AddGoogle();
-    private void AddTeraBox_Click(object sender, RoutedEventArgs e) => AccountActions.AddTeraBox();
+    private async void AddTeraBox_Click(object sender, RoutedEventArgs e) => await AccountActions.AddTeraBox();
     private void Info_Click(object sender, RoutedEventArgs e) => AccountActions.Info(Id(sender));
     private async void Rename_Click(object sender, RoutedEventArgs e) => await AccountActions.Rename(Id(sender));
     private async void Toggle_Click(object sender, RoutedEventArgs e) => await AccountActions.Toggle(Id(sender));

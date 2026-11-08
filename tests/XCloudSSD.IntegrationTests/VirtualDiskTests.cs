@@ -162,6 +162,43 @@ public class VirtualDiskTests(ITestOutputHelper output)
     }
 
     [WinFspFact]
+    public void SteamReserveSpace_IsInstant_AndNothingIsUploaded()
+    {
+        using var disk = new TestDisk(TestDisk.FreeLetter(), "XCloudSSD Reserve", 32L << 20);
+        var dir = Path.Combine(disk.Root, "SteamLibrary", "steamapps", "common", "Game", "data");
+        Directory.CreateDirectory(dir);
+        var sw = Stopwatch.StartNew();
+        // "Reserving space": every file is created at its final size before any data arrives.
+        for (var i = 0; i < 10; i++)
+        {
+            using var fs = new FileStream(Path.Combine(dir, $"pack{i}.cpk"), FileMode.CreateNew, FileAccess.Write);
+            fs.SetLength(2L << 30); // 2 GiB each, 20 GiB total
+        }
+        output.WriteLine($"reserved 20 GiB in {sw.ElapsedMilliseconds} ms, uploaded {disk.Cloud.BytesUploaded} bytes");
+        Assert.Equal(0, disk.Cloud.BytesUploaded);
+        Assert.True(sw.Elapsed < TimeSpan.FromSeconds(20));
+        Assert.Equal(2L << 30, new System.IO.FileInfo(Path.Combine(dir, "pack3.cpk")).Length);
+
+        // Download phase: the file is opened again and filled in order; only real data is uploaded.
+        var data = Rand(48 << 20, 7);
+        using (var fs = new FileStream(Path.Combine(dir, "pack0.cpk"), FileMode.Open, FileAccess.ReadWrite, FileShare.None, 1 << 20))
+            for (var off = 0; off < data.Length; off += 1 << 20) fs.Write(data, off, 1 << 20);
+        Assert.True(disk.Cloud.ContentAt("SteamLibrary/steamapps/common/Game/data/pack0.cpk")!.AsSpan().SequenceEqual(data));
+        Assert.Equal(2L << 30, new System.IO.FileInfo(Path.Combine(dir, "pack0.cpk")).Length);
+        Assert.True(disk.Cloud.BytesUploaded < 64L << 20, $"uploaded {disk.Cloud.BytesUploaded}");
+
+        // Reserved, never-written regions read back as zeros.
+        using (var fs = new FileStream(Path.Combine(dir, "pack0.cpk"), FileMode.Open, FileAccess.Read))
+        {
+            fs.Position = 1L << 30;
+            var buf = new byte[8192];
+            Assert.Equal(buf.Length, fs.Read(buf));
+            Assert.All(buf, b => Assert.Equal(0, b));
+        }
+        Assert.True(disk.Budget.Peak <= 32L << 20);
+    }
+
+    [WinFspFact]
     public void LargeOutOfOrderWrite_FailsClearly_InsteadOfUsingDisk()
     {
         using var disk = new TestDisk(TestDisk.FreeLetter(), "XCloudSSD OOO", 16L << 20);
@@ -275,6 +312,6 @@ public class ServiceSmokeTests
         var letters = await client.CallAsync<List<string>>(Commands.FreeDriveLetters);
         Assert.NotEmpty(letters!);
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => client.CallAsync(Commands.AddTeraBox, new AddTeraBoxArgs()));
-        Assert.Contains("Open Platform", ex.Message);
+        Assert.Contains("sign-in", ex.Message);
     }
 }

@@ -125,6 +125,8 @@ public sealed class AddGoogleArgs
 
 public sealed class AddTeraBoxArgs
 {
+    /// <summary>Session cookie header for terabox.com, captured after the user signed in inside XCloudSSD.</summary>
+    public string Cookie { get; set; } = "";
     public char? DriveLetter { get; set; }
 }
 

@@ -19,6 +19,7 @@ public sealed class GoogleDriveProvider : ICloudProvider, IRootOverride
     public const string UploadBase = "https://www.googleapis.com/upload/drive/v3/files";
     public const string FolderMime = "application/vnd.google-apps.folder";
     private const string AttrKey = "xcs_attr";
+    private const string SizeKey = "xcs_size";
     internal const string FileFields = "id,name,mimeType,size,createdTime,modifiedTime,md5Checksum,appProperties,parents,trashed";
 
     private readonly HttpClient _http;
@@ -179,7 +180,14 @@ public sealed class GoogleDriveProvider : ICloudProvider, IRootOverride
     {
         var body = new JsonObject();
         if (u.NewName is not null) body["name"] = u.NewName;
-        if (u.WindowsAttributes is { } a) body["appProperties"] = new JsonObject { [AttrKey] = a.ToString(CultureInfo.InvariantCulture) };
+        if (u.WindowsAttributes is not null || u.LogicalSize is not null)
+        {
+            // appProperties are merged by Drive: only the keys sent here change.
+            var props = new JsonObject();
+            if (u.WindowsAttributes is { } a) props[AttrKey] = a.ToString(CultureInfo.InvariantCulture);
+            if (u.LogicalSize is { } l) props[SizeKey] = l.ToString(CultureInfo.InvariantCulture);
+            body["appProperties"] = props;
+        }
         if (u.Modified is { } m) body["modifiedTime"] = m.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", CultureInfo.InvariantCulture);
         var url = new StringBuilder($"files/{Uri.EscapeDataString(id)}?fields={Uri.EscapeDataString(FileFields)}");
         if (u.AddParentId is not null) url.Append("&addParents=").Append(Uri.EscapeDataString(u.AddParentId));
@@ -410,13 +418,20 @@ public sealed class GoogleDriveProvider : ICloudProvider, IRootOverride
         if (o["appProperties"]?[AttrKey]?.GetValue<string>() is { } a &&
             uint.TryParse(a, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
             attrs = parsed;
+        long? logical = null;
+        if (o["appProperties"]?[SizeKey]?.GetValue<string>() is { } ls &&
+            long.TryParse(ls, NumberStyles.Integer, CultureInfo.InvariantCulture, out var lv))
+            logical = lv;
+        var stored = o["size"] is { } sz ? long.Parse(sz.GetValue<string>(), CultureInfo.InvariantCulture) : 0;
         var parents = o["parents"] is JsonArray p ? p.Select(x => x!.GetValue<string>()).ToList() : new List<string>();
         return new CloudItem
         {
             Id = o["id"]!.GetValue<string>(),
             Name = o["name"]?.GetValue<string>() ?? "",
             IsFolder = isFolder,
-            Size = o["size"] is { } s ? long.Parse(s.GetValue<string>(), CultureInfo.InvariantCulture) : 0,
+            // Sparse files: Windows sees the recorded logical size, only `stored` bytes exist in the cloud.
+            Size = logical is { } lsz && lsz > stored ? lsz : stored,
+            StoredSize = stored,
             Created = ParseTime(o["createdTime"]),
             Modified = ParseTime(o["modifiedTime"]),
             Md5 = o["md5Checksum"]?.GetValue<string>(),

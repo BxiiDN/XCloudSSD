@@ -7,7 +7,6 @@ using System.Windows;
 using XCloudSSD.Authentication;
 using XCloudSSD.Core;
 using XCloudSSD.Core.Ipc;
-using XCloudSSD.TeraBox;
 
 namespace XCloudSSD.Desktop.Infrastructure;
 
@@ -182,11 +181,32 @@ public static class AccountActions
         }
     }
 
-    public static void AddTeraBox()
+    public static async Task AddTeraBox()
     {
-        var choice = Dialogs.Actions(Owner, L.T("AddTeraBox"), L.T("TeraBoxUnavailable"),
-            L.T("OpenTeraBoxSite"), L.T("OpenTeraBoxPlatform"), L.T("Close"));
-        if (choice == 0) ServiceHub.OpenUrl(TeraBoxProvider.OfficialSite);
-        else if (choice == 1) ServiceHub.OpenUrl(TeraBoxProvider.OpenPlatformDocs);
+        if (!TeraBoxLoginWindow.RuntimeAvailable(out _))
+        {
+            if (Dialogs.Actions(Owner, L.T("AddTeraBox"), L.T("WebView2Missing"), L.T("Download"), L.T("Close")) == 0)
+                ServiceHub.OpenUrl("https://developer.microsoft.com/microsoft-edge/webview2/");
+            return;
+        }
+        if (!Dialogs.Confirm(Owner, L.T("AddTeraBox"), L.T("TeraBoxDisclosure"), L.T("Continue"))) return;
+
+        var login = new TeraBoxLoginWindow(Owner);
+        if (login.ShowDialog() != true || string.IsNullOrEmpty(login.CookieHeader)) return;
+        try
+        {
+            Mouse(true);
+            var added = await ServiceHub.Client.CallAsync<AccountDto>(Commands.AddTeraBox,
+                new AddTeraBoxArgs { Cookie = login.CookieHeader }, 180_000);
+            await ServiceHub.RefreshAsync();
+            Mouse(false);
+            if (added is not null)
+                Dialogs.Info(Owner, L.T("AddTeraBox"), L.F("TeraBoxAdded", added.Label, added.DriveLetter));
+        }
+        catch (Exception ex)
+        {
+            Mouse(false);
+            Dialogs.Error(Owner, ex);
+        }
     }
 }

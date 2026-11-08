@@ -4,8 +4,9 @@
 (`D:`, `E:`, …) yang muncul di *This PC → Devices and drives*. Isi file berada langsung di cloud; secara lokal
 hanya dipakai buffer RAM yang dibatasi — **tidak ada cache game/file di C: atau SSD fisik lain**.
 
-> Status: v1.0.0. Google Drive diimplementasikan penuh lewat API resmi. TeraBox **belum bisa dipasang**
-> (API resminya khusus partner — lihat [docs/LIMITATIONS.md](docs/LIMITATIONS.md)).
+> Status: v1.1.0. Google Drive lewat API resmi. TeraBox **eksperimental**: login di dalam aplikasi pada halaman
+> resmi TeraBox, lalu memakai antarmuka web TeraBox (tidak resmi, belum diuji dengan akun sungguhan) — lihat
+> [docs/LIMITATIONS.md](docs/LIMITATIONS.md).
 > Hasil pengujian nyata ada di [docs/TESTING.md](docs/TESTING.md).
 
 ## Fitur

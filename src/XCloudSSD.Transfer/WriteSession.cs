@@ -56,6 +56,10 @@ public sealed class WriteSession : IDisposable
     private readonly ChunkReadCache _cache;
     private readonly WriteOptions _options;
     private readonly SortedDictionary<long, Page> _pages = new();
+    /// <summary>Whole pages written with zeros beyond the stored content: kept sparse (no RAM, never uploaded unless inside data).</summary>
+    private readonly HashSet<long> _zeroPages = new();
+    /// <summary>End of the last non-zero byte range written (or of the stored content). Upload length = this.</summary>
+    private long _dataEnd;
     private readonly object _lock = new();
     private IUploadSession? _stream;
     private IncrementalHash? _md5;
@@ -65,7 +69,7 @@ public sealed class WriteSession : IDisposable
     private CommitTarget? _streamTarget;
 
     public WriteSession(ICloudProvider provider, MemoryBudget budget, ChunkReadCache cache, WriteOptions options,
-        string? baseFileId, string? baseVersion, long baseSize)
+        string? baseFileId, string? baseVersion, long baseSize, long? logicalSize = null)
     {
         _provider = provider;
         _budget = budget;
@@ -74,7 +78,8 @@ public sealed class WriteSession : IDisposable
         BaseFileId = baseFileId;
         BaseVersion = baseVersion ?? "";
         BaseSize = baseFileId is null ? 0 : baseSize;
-        LogicalSize = BaseSize;
+        LogicalSize = Math.Max(BaseSize, logicalSize ?? BaseSize);
+        _dataEnd = BaseSize;
         // A brand-new file must be created in the cloud even if nothing is ever written to it.
         Dirty = baseFileId is null;
     }
@@ -121,9 +126,20 @@ public sealed class WriteSession : IDisposable
                 var pageIndex = abs / PageSize;
                 var inPage = (int)(abs % PageSize);
                 var n = Math.Min(PageSize - inPage, data.Length - pos);
+                var segment = data.Slice(pos, n);
+                // Space reservation (e.g. Steam "Reserving space" writing zeros): a whole zero page beyond the stored
+                // content stays sparse — no RAM, nothing uploaded.
+                if (inPage == 0 && n == PageSize && abs >= BaseSize && !_pages.ContainsKey(pageIndex) && !segment.ContainsAnyExcept((byte)0))
+                {
+                    _zeroPages.Add(pageIndex);
+                    pos += n;
+                    continue;
+                }
                 var page = GetOrCreatePage(pageIndex, ct);
-                data.Slice(pos, n).CopyTo(page.Data.AsSpan(inPage));
+                _zeroPages.Remove(pageIndex);
+                segment.CopyTo(page.Data.AsSpan(inPage));
                 if (inPage <= page.Filled) page.Filled = Math.Max(page.Filled, inPage + n);
+                _dataEnd = Math.Max(_dataEnd, abs + n);
                 pos += n;
             }
             LogicalSize = Math.Max(LogicalSize, offset + data.Length);
@@ -144,6 +160,8 @@ public sealed class WriteSession : IDisposable
             {
                 var lastKeptPage = newSize == 0 ? -1 : (newSize - 1) / PageSize;
                 foreach (var idx in _pages.Keys.Where(k => k > lastKeptPage).ToList()) DropPage(idx);
+                _zeroPages.RemoveWhere(k => k > lastKeptPage || (long)k * PageSize + PageSize > newSize);
+                _dataEnd = Math.Min(_dataEnd, newSize);
                 if (newSize % PageSize != 0 && _pages.TryGetValue(newSize / PageSize, out var tail))
                 {
                     var keep = (int)(newSize % PageSize);
@@ -192,6 +210,13 @@ public sealed class WriteSession : IDisposable
     private void DropPage(long index)
     {
         if (_pages.Remove(index)) _budget.Release(PageSize);
+        _zeroPages.Remove(index);
+    }
+
+    /// <summary>Bytes that really have to be stored in the cloud; the rest of LogicalSize is a sparse zero tail.</summary>
+    public long DataLength
+    {
+        get { lock (_lock) return Math.Min(LogicalSize, Math.Max(_dataEnd, Math.Max(_frontier, BaseSize))); }
     }
 
     // ------------------------------------------------------------------ streaming
@@ -200,7 +225,7 @@ public sealed class WriteSession : IDisposable
     {
         long bytes = 0;
         var idx = _frontier / PageSize;
-        while (_pages.TryGetValue(idx, out var p) && p.Filled == PageSize)
+        while ((_pages.TryGetValue(idx, out var p) && p.Filled == PageSize) || _zeroPages.Contains(idx))
         {
             bytes += PageSize;
             idx++;
@@ -218,6 +243,9 @@ public sealed class WriteSession : IDisposable
         var granularity = _stream?.Granularity ?? 256 * 1024;
         var chunk = Math.Max(granularity, _options.UploadChunkBytes / granularity * granularity);
         var ready = ContiguousCompleteFromFrontier() / granularity * granularity;
+        // Never stream a trailing run of reserved (zero) space: it stays sparse.
+        if (_provider.Capabilities.CustomProperties)
+            ready = Math.Min(ready, Math.Max(0, _dataEnd - _frontier) / granularity * granularity);
         if (ready < (force ? granularity : chunk)) return;
 
         try
@@ -330,18 +358,26 @@ public sealed class WriteSession : IDisposable
             if (!Dirty && target.ExistingFileId is not null) return null;
             try
             {
-                var item = Upload(target, ct, out var expectedMd5);
-                if (item.Size != LogicalSize)
-                    throw new CloudException(CloudErrorKind.IntegrityMismatch, $"Size check failed after upload: cloud {item.Size} bytes, local {LogicalSize} bytes.");
+                // Only real data is uploaded; a reserved zero tail stays sparse (recorded as the logical size).
+                var length = Math.Min(LogicalSize, Math.Max(_dataEnd, Math.Max(_frontier, BaseSize)));
+                // Providers that cannot store a logical size (e.g. TeraBox) get the zero tail uploaded for real.
+                if (!_provider.Capabilities.CustomProperties) length = LogicalSize;
+                var item = Upload(target, length, ct, out var expectedMd5);
+                if (item.ContentLength != length)
+                    throw new CloudException(CloudErrorKind.IntegrityMismatch, $"Size check failed after upload: cloud {item.ContentLength} bytes, local {length} bytes.");
                 if (item.Md5 is { } cloudMd5 && !string.Equals(cloudMd5, expectedMd5, StringComparison.OrdinalIgnoreCase))
                     throw new CloudException(CloudErrorKind.IntegrityMismatch, $"MD5 check failed after upload: cloud {cloudMd5}, local {expectedMd5}.");
+                if (item.Size != LogicalSize && _provider.Capabilities.CustomProperties)
+                    item = _provider.UpdateMetadataAsync(item.Id, new MetadataUpdate { LogicalSize = LogicalSize }, ct).GetAwaiter().GetResult();
 
                 // Committed and verified: release RAM and make the cloud object the new base.
                 foreach (var idx in _pages.Keys.ToList()) DropPage(idx);
                 if (BaseFileId is not null) _cache.InvalidateFile(BaseFileId);
                 BaseFileId = item.Id;
                 BaseVersion = item.Md5 ?? item.Modified.UtcTicks.ToString();
-                BaseSize = LogicalSize;
+                BaseSize = length;
+                _dataEnd = length;
+                _zeroPages.Clear();
                 Dirty = false;
                 ResetStream();
                 Progress?.Invoke(LogicalSize, LogicalSize);
@@ -364,9 +400,9 @@ public sealed class WriteSession : IDisposable
         }
     }
 
-    private CloudItem Upload(CommitTarget target, CancellationToken ct, out string expectedMd5)
+    private CloudItem Upload(CommitTarget target, long length, CancellationToken ct, out string expectedMd5)
     {
-        if (LogicalSize == 0 && _stream is null)
+        if (length == 0 && _stream is null)
         {
             expectedMd5 = EmptyMd5;
             if (target.ExistingFileId is null)
@@ -386,23 +422,23 @@ public sealed class WriteSession : IDisposable
         var chunk = Math.Max(granularity, _options.UploadChunkBytes / granularity * granularity);
         // Resume exactly where the server is (it may have persisted part of a previous final chunk).
         var sent = Math.Max(_frontier, stream.Committed);
-        var buf = new byte[(int)Math.Max(1, Math.Min(chunk, LogicalSize - sent))];
+        var buf = new byte[(int)Math.Max(1, Math.Min(chunk, length - sent))];
         while (true)
         {
-            var remaining = LogicalSize - sent;
+            var remaining = length - sent;
             var size = (int)Math.Min(chunk, remaining);
             var data = buf.AsMemory(0, size);
             Compose(sent, data.Span, ct);
             HashRange(sent, data.Span);
             if (remaining <= chunk)
             {
-                var item = stream.CompleteAsync(data, LogicalSize, ct).GetAwaiter().GetResult();
+                var item = stream.CompleteAsync(data, length, ct).GetAwaiter().GetResult();
                 expectedMd5 = Convert.ToHexStringLower(_md5!.GetCurrentHash());
                 return item;
             }
             stream.AppendAsync(data, ct).GetAwaiter().GetResult();
             sent += size;
-            Progress?.Invoke(sent, LogicalSize);
+            Progress?.Invoke(sent, length);
         }
     }
 

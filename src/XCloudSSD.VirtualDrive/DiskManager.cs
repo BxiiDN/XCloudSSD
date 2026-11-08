@@ -109,7 +109,7 @@ public sealed class DiskManager : IDisposable
         ICloudProvider provider = account.Provider switch
         {
             ProviderKind.GoogleDrive => CreateGoogleProvider(account.Id, out _),
-            _ => new TeraBoxProvider(),
+            _ => CreateTeraBoxProvider(account.Id),
         };
         return new VirtualDisk(account, provider, Budget, Transfers, _db, _logs.CreateLogger($"Disk-{account.DriveLetter}"));
     }
@@ -126,6 +126,14 @@ public sealed class DiskManager : IDisposable
         tokens = source;
         var metrics = new Metrics();
         return new GoogleDriveProvider(_http, (force, ct) => source.GetAsync(ct, force), metrics);
+    }
+
+    private ICloudProvider CreateTeraBoxProvider(string accountId)
+    {
+        var secret = _secrets.Load(accountId);
+        if (secret is null || !secret.TryGetValue("cookie", out var cookie) || string.IsNullOrEmpty(cookie))
+            return new UnconfiguredProvider("TeraBox sign-in data for this account is missing. Remove the account and add it again.");
+        return new TeraBoxWebProvider(cookie, new Metrics());
     }
 
     // ------------------------------------------------------------------ OAuth client
@@ -203,9 +211,54 @@ public sealed class DiskManager : IDisposable
         }
     }
 
-    /// <summary>TeraBox cannot be mounted without Open Platform credentials; say so instead of pretending.</summary>
-    public Task<AccountDto> AddTeraBoxAsync(AddTeraBoxArgs args, CancellationToken ct)
-        => throw new NotSupportedException(TeraBoxProvider.UnavailableMessage);
+    /// <summary>
+    /// Adds a TeraBox account from the session cookie captured after the user signed in on terabox.com inside
+    /// the app. The cookie is verified against TeraBox before anything is saved.
+    /// </summary>
+    public async Task<AccountDto> AddTeraBoxAsync(AddTeraBoxArgs args, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(args.Cookie) || !args.Cookie.Contains("ndus=", StringComparison.Ordinal))
+            throw new InvalidOperationException("TeraBox sign-in was not completed (no session cookie). Sign in again.");
+        var provider = new TeraBoxWebProvider(args.Cookie.Trim(), new Metrics());
+        try
+        {
+            await provider.InitializeAsync(ct).ConfigureAwait(false);
+            await provider.GetQuotaAsync(ct).ConfigureAwait(false);
+        }
+        catch
+        {
+            provider.Dispose();
+            throw;
+        }
+
+        await _gate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            var accountId = "t-" + Guid.NewGuid().ToString("N")[..12];
+            var letter = PickLetter(args.DriveLetter);
+            var ordinal = NextOrdinal(ProviderKind.TeraBox);
+            var account = new AccountRecord
+            {
+                Id = accountId,
+                Provider = ProviderKind.TeraBox,
+                DisplayName = "TeraBox",
+                Email = $"TeraBox account {ordinal:00}",
+                DriveLetter = letter,
+                Label = AccountRecord.DefaultLabel(ProviderKind.TeraBox, ordinal),
+                Enabled = true,
+            };
+            _secrets.Save(accountId, new Dictionary<string, string> { ["cookie"] = args.Cookie.Trim() });
+            _db.UpsertAccount(account);
+            var disk = new VirtualDisk(account, provider, Budget, Transfers, _db, _logs.CreateLogger($"Disk-{letter}"));
+            _disks[accountId] = disk;
+            await disk.StartAsync(Settings, ct).ConfigureAwait(false);
+            return ToDto(disk);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
 
     public async Task RemoveAsync(string accountId, CancellationToken ct)
     {

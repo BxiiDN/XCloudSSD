@@ -4,5 +4,9 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\XCloudSSD.Core\XCloudSSD.Core.csproj" />
+    <ProjectReference Include="..\XCloudSSD.Cloud\XCloudSSD.Cloud.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="XCloudSSD.Tests" />
   </ItemGroup>
 </Project>
