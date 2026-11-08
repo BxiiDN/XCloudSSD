@@ -1,0 +1,60 @@
+<UserControl x:Class="XCloudSSD.Desktop.Pages.PerformancePage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:i="clr-namespace:XCloudSSD.Desktop.Infrastructure">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel>
+            <TextBlock Style="{StaticResource H1}" Text="{Binding [NavPerformance], Source={x:Static i:Loc.Instance}}" />
+            <TextBlock Style="{StaticResource Dim}" Margin="0,0,0,20" Text="{Binding [PerfSub], Source={x:Static i:Loc.Instance}}" />
+
+            <UniformGrid Columns="4">
+                <Border Style="{StaticResource Card}"><StackPanel>
+                    <TextBlock Style="{StaticResource StatLabel}" Text="{Binding [PerfUpload], Source={x:Static i:Loc.Instance}}" />
+                    <TextBlock x:Name="Up" Style="{StaticResource StatValue}" Text="—" /></StackPanel></Border>
+                <Border Style="{StaticResource Card}"><StackPanel>
+                    <TextBlock Style="{StaticResource StatLabel}" Text="{Binding [PerfDownload], Source={x:Static i:Loc.Instance}}" />
+                    <TextBlock x:Name="Down" Style="{StaticResource StatValue}" Text="—" /></StackPanel></Border>
+                <Border Style="{StaticResource Card}"><StackPanel>
+                    <TextBlock Style="{StaticResource StatLabel}" Text="{Binding [PerfNetLatency], Source={x:Static i:Loc.Instance}}" />
+                    <TextBlock x:Name="NetLatency" Style="{StaticResource StatValue}" Text="—" /></StackPanel></Border>
+                <Border Style="{StaticResource Card}"><StackPanel>
+                    <TextBlock Style="{StaticResource StatLabel}" Text="{Binding [PerfCloudResponse], Source={x:Static i:Loc.Instance}}" />
+                    <TextBlock x:Name="CloudLatency" Style="{StaticResource StatValue}" Text="—" /></StackPanel></Border>
+                <Border Style="{StaticResource Card}"><StackPanel>
+                    <TextBlock Style="{StaticResource StatLabel}" Text="{Binding [PerfActiveRequests], Source={x:Static i:Loc.Instance}}" />
+                    <TextBlock x:Name="Requests" Style="{StaticResource StatValue}" Text="—" /></StackPanel></Border>
+                <Border Style="{StaticResource Card}"><StackPanel>
+                    <TextBlock Style="{StaticResource StatLabel}" Text="{Binding [PerfRam], Source={x:Static i:Loc.Instance}}" />
+                    <TextBlock x:Name="Ram" Style="{StaticResource StatValue}" Text="—" />
+                    <TextBlock x:Name="RamSub" Style="{StaticResource Dim}" FontSize="11" /></StackPanel></Border>
+                <Border Style="{StaticResource Card}"><StackPanel>
+                    <TextBlock Style="{StaticResource StatLabel}" Text="{Binding [PerfFsIo], Source={x:Static i:Loc.Instance}}" />
+                    <TextBlock x:Name="FsIo" Style="{StaticResource StatValue}" Text="—" />
+                    <TextBlock x:Name="FsIoSub" Style="{StaticResource Dim}" FontSize="11" /></StackPanel></Border>
+                <Border Style="{StaticResource Card}"><StackPanel>
+                    <TextBlock Style="{StaticResource StatLabel}" Text="{Binding [PerfConnections], Source={x:Static i:Loc.Instance}}" />
+                    <TextBlock x:Name="Handles" Style="{StaticResource StatValue}" Text="—" />
+                    <TextBlock x:Name="QueueSub" Style="{StaticResource Dim}" FontSize="11" /></StackPanel></Border>
+            </UniformGrid>
+
+            <Border Style="{StaticResource Card}">
+                <StackPanel>
+                    <TextBlock Style="{StaticResource H2}" Text="{Binding [PerfChartTitle], Source={x:Static i:Loc.Instance}}" />
+                    <Grid Height="180">
+                        <Canvas x:Name="Chart" ClipToBounds="True" SizeChanged="Chart_SizeChanged">
+                            <Polyline x:Name="DownLine" StrokeThickness="2" Stroke="{DynamicResource TextBrush}" />
+                            <Polyline x:Name="UpLine" StrokeThickness="2" Stroke="{DynamicResource OkBrush}" />
+                        </Canvas>
+                    </Grid>
+                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                        <Rectangle Width="12" Height="3" Fill="{DynamicResource TextBrush}" VerticalAlignment="Center" />
+                        <TextBlock Margin="6,0,18,0" Style="{StaticResource Dim}" Text="{Binding [PerfDownload], Source={x:Static i:Loc.Instance}}" />
+                        <Rectangle Width="12" Height="3" Fill="{DynamicResource OkBrush}" VerticalAlignment="Center" />
+                        <TextBlock Margin="6,0,18,0" Style="{StaticResource Dim}" Text="{Binding [PerfUpload], Source={x:Static i:Loc.Instance}}" />
+                        <TextBlock x:Name="ChartScale" Style="{StaticResource Dim}" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

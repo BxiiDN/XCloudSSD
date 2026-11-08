@@ -1,0 +1,135 @@
+name: build-test-package
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-2025
+    timeout-minutes: 60
+    env:
+      DOTNET_NOLOGO: "1"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Download WinFsp (latest official release)
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          New-Item -ItemType Directory -Force deps | Out-Null
+          gh release download --repo winfsp/winfsp --pattern "winfsp-*.msi" --dir deps
+          $msi = Get-ChildItem deps\winfsp-*.msi | Select-Object -First 1
+          Copy-Item $msi.FullName deps\winfsp.msi
+          "WINFSP_MSI_NAME=$($msi.Name)" | Out-File $env:GITHUB_ENV -Append
+          Write-Host "WinFsp installer: $($msi.Name)"
+
+      - name: Install WinFsp
+        shell: pwsh
+        run: |
+          $p = Start-Process msiexec.exe -ArgumentList "/i", "deps\winfsp.msi", "/qn", "/norestart" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "WinFsp install failed: $($p.ExitCode)" }
+          Get-ItemProperty "HKLM:\SOFTWARE\WOW6432Node\WinFsp" | Format-List
+
+      - name: Restore
+        run: dotnet restore XCloudSSD.slnx
+
+      - name: Build (Release)
+        run: dotnet build XCloudSSD.slnx -c Release --no-restore -warnaserror:false
+
+      - name: Unit tests
+        run: dotnet test tests/XCloudSSD.Tests/XCloudSSD.Tests.csproj -c Release --no-build --logger "trx;LogFileName=unit.trx" --logger "console;verbosity=normal" --results-directory TestResults
+
+      - name: Integration tests (real WinFsp mounts)
+        run: dotnet test tests/XCloudSSD.IntegrationTests/XCloudSSD.IntegrationTests.csproj -c Release --no-build --filter "Category!=Service" --logger "trx;LogFileName=integration.trx" --logger "console;verbosity=normal" --results-directory TestResults
+
+      - name: Publish XCloudSSD.exe and XCloudSSDService.exe (self-contained, single file)
+        shell: pwsh
+        run: |
+          dotnet publish src/XCloudSSD.Desktop/XCloudSSD.Desktop.csproj -c Release -r win-x64 --self-contained -o out/app
+          dotnet publish src/XCloudSSD.Service/XCloudSSD.Service.csproj -c Release -r win-x64 --self-contained -o out/app
+          Get-ChildItem out/app | Format-Table Name, Length
+
+      - name: Service smoke test (install as real Windows service, query control pipe)
+        shell: pwsh
+        run: |
+          $exe = (Resolve-Path out/app/XCloudSSDService.exe).Path
+          sc.exe create XCloudSSDService binPath= "`"$exe`"" start= demand DisplayName= "XCloudSSD Service"
+          sc.exe start XCloudSSDService
+          Start-Sleep -Seconds 8
+          sc.exe query XCloudSSDService
+          $env:XCLOUDSSD_SERVICE_TEST = "1"
+          dotnet test tests/XCloudSSD.IntegrationTests/XCloudSSD.IntegrationTests.csproj -c Release --no-build --filter "Category=Service" --logger "trx;LogFileName=service.trx" --logger "console;verbosity=normal" --results-directory TestResults
+          $code = $LASTEXITCODE
+          sc.exe stop XCloudSSDService
+          Start-Sleep -Seconds 3
+          Get-ChildItem "$env:ProgramData\XCloudSSD\logs" -ErrorAction SilentlyContinue | ForEach-Object { Get-Content $_.FullName }
+          sc.exe delete XCloudSSDService
+          exit $code
+
+      - name: Build installer (Inno Setup)
+        shell: pwsh
+        run: |
+          $iscc = Get-ChildItem "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" -ErrorAction SilentlyContinue
+          if (-not $iscc) {
+            choco install innosetup --no-progress -y | Out-Null
+            $iscc = Get-ChildItem "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          }
+          & $iscc.FullName /DAppVersion=1.0.0 /DSourceDir="$PWD\out\app" /DWinFspMsi="$PWD\deps\winfsp.msi" /DRepoDir="$PWD" /O"$PWD\out" installer\XCloudSSD.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed" }
+
+      - name: Portable zip
+        shell: pwsh
+        run: |
+          $p = "out/portable/XCloudSSD"
+          New-Item -ItemType Directory -Force $p | Out-Null
+          Copy-Item out/app/XCloudSSD.exe, out/app/XCloudSSDService.exe $p
+          Copy-Item installer/portable/*.cmd $p
+          Copy-Item deps/winfsp.msi "$p/winfsp.msi"
+          Copy-Item README.md, LICENSE, THIRD-PARTY-NOTICES.md $p
+          Compress-Archive -Path "$p/*" -DestinationPath out/XCloudSSD-Portable-x64.zip -Force
+          Get-ChildItem out | Format-Table Name, Length
+
+      - name: Silent install / uninstall test of XCloudSSD-Setup.exe
+        shell: pwsh
+        run: |
+          $p = Start-Process out\XCloudSSD-Setup.exe -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/LOG=install.log" -Wait -PassThru
+          Get-Content install.log -Tail 30
+          if ($p.ExitCode -ne 0) { throw "Setup exit code $($p.ExitCode)" }
+          sc.exe qc XCloudSSDService
+          Start-Sleep -Seconds 5
+          $svc = Get-Service XCloudSSDService
+          Write-Host "Service status after install: $($svc.Status), start type: $($svc.StartType)"
+          if ($svc.Status -ne 'Running') { throw "Service not running after install" }
+          if (-not (Test-Path "$env:ProgramFiles\XCloudSSD\XCloudSSD.exe")) { throw "App not installed" }
+          $u = Start-Process "$env:ProgramFiles\XCloudSSD\unins000.exe" -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART" -Wait -PassThru
+          Start-Sleep -Seconds 3
+          if (Get-Service XCloudSSDService -ErrorAction SilentlyContinue) { throw "Service still registered after uninstall" }
+          Write-Host "Install/uninstall OK (uninstaller exit $($u.ExitCode))"
+
+      - name: Upload packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: XCloudSSD-windows-x64
+          path: |
+            out/XCloudSSD-Setup.exe
+            out/XCloudSSD-Portable-x64.zip
+          if-no-files-found: error
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: TestResults/*.trx

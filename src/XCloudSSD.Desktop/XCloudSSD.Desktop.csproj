@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <RootNamespace>XCloudSSD.Desktop</RootNamespace>
+    <AssemblyName>XCloudSSD</AssemblyName>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <!-- WPF and WinForms share type names; all usings are explicit in this project. -->
+    <ImplicitUsings>disable</ImplicitUsings>
+    <ApplicationIcon>Assets\xcloudssd.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <!-- WPF Fluent theme (ThemeMode) is marked experimental. -->
+    <NoWarn>$(NoWarn);WPF0001</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\XCloudSSD.Core\XCloudSSD.Core.csproj" />
+    <ProjectReference Include="..\XCloudSSD.Authentication\XCloudSSD.Authentication.csproj" />
+    <ProjectReference Include="..\XCloudSSD.TeraBox\XCloudSSD.TeraBox.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Languages\*.json" />
+    <Resource Include="Assets\xcloudssd.ico" />
+  </ItemGroup>
+</Project>

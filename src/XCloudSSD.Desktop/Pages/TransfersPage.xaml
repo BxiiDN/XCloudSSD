@@ -1,0 +1,38 @@
+<UserControl x:Class="XCloudSSD.Desktop.Pages.TransfersPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:i="clr-namespace:XCloudSSD.Desktop.Infrastructure">
+    <DockPanel>
+        <StackPanel DockPanel.Dock="Top">
+            <TextBlock Style="{StaticResource H1}" Text="{Binding [NavTransfers], Source={x:Static i:Loc.Instance}}" />
+            <TextBlock Style="{StaticResource Dim}" Margin="0,0,0,14" Text="{Binding [TransfersSub], Source={x:Static i:Loc.Instance}}" />
+            <WrapPanel Margin="0,0,0,10">
+                <Button Style="{DynamicResource ToolButton}" Click="Refresh_Click" Content="{Binding [Refresh], Source={x:Static i:Loc.Instance}}" />
+                <Button Style="{DynamicResource ToolButton}" Click="Clear_Click" Content="{Binding [ClearFinished], Source={x:Static i:Loc.Instance}}" />
+                <TextBlock x:Name="Summary" Style="{StaticResource Dim}" VerticalAlignment="Center" Margin="8,0,0,6" />
+            </WrapPanel>
+        </StackPanel>
+        <ListView x:Name="Items">
+            <ListView.View>
+                <GridView>
+                    <GridViewColumn Width="380" Header="{Binding [ColFile], Source={x:Static i:Loc.Instance}}" DisplayMemberBinding="{Binding FullPath}" />
+                    <GridViewColumn Width="100" Header="{Binding [ColDirection], Source={x:Static i:Loc.Instance}}" DisplayMemberBinding="{Binding DirectionText}" />
+                    <GridViewColumn Width="110" Header="{Binding [ColState], Source={x:Static i:Loc.Instance}}" DisplayMemberBinding="{Binding StateText}" />
+                    <GridViewColumn Width="160" Header="{Binding [ColProgress], Source={x:Static i:Loc.Instance}}">
+                        <GridViewColumn.CellTemplate>
+                            <DataTemplate>
+                                <StackPanel Width="140">
+                                    <ProgressBar Height="4" Minimum="0" Maximum="1" Value="{Binding Fraction, Mode=OneWay}" />
+                                    <TextBlock Text="{Binding ProgressText}" FontSize="11" Foreground="{DynamicResource DimBrush}" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </GridViewColumn.CellTemplate>
+                    </GridViewColumn>
+                    <GridViewColumn Width="70" Header="{Binding [ColAttempts], Source={x:Static i:Loc.Instance}}" DisplayMemberBinding="{Binding Attempts}" />
+                    <GridViewColumn Width="140" Header="{Binding [ColUpdated], Source={x:Static i:Loc.Instance}}" DisplayMemberBinding="{Binding UpdatedText}" />
+                    <GridViewColumn Width="420" Header="{Binding [ColError], Source={x:Static i:Loc.Instance}}" DisplayMemberBinding="{Binding Error}" />
+                </GridView>
+            </ListView.View>
+        </ListView>
+    </DockPanel>
+</UserControl>

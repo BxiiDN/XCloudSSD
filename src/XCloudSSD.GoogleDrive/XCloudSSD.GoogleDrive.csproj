@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>XCloudSSD.GoogleDrive</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\XCloudSSD.Core\XCloudSSD.Core.csproj" />
+    <ProjectReference Include="..\XCloudSSD.Cloud\XCloudSSD.Cloud.csproj" />
+    <ProjectReference Include="..\XCloudSSD.Authentication\XCloudSSD.Authentication.csproj" />
+  </ItemGroup>
+</Project>

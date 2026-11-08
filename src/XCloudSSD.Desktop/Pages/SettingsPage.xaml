@@ -1,0 +1,130 @@
+<UserControl x:Class="XCloudSSD.Desktop.Pages.SettingsPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:i="clr-namespace:XCloudSSD.Desktop.Infrastructure">
+    <UserControl.Resources>
+        <Style TargetType="TextBlock" x:Key="Label">
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Margin" Value="0,6,16,6" />
+        </Style>
+    </UserControl.Resources>
+    <DockPanel>
+        <StackPanel DockPanel.Dock="Top">
+            <TextBlock Style="{StaticResource H1}" Text="{Binding [NavSettings], Source={x:Static i:Loc.Instance}}" />
+            <TextBlock Style="{StaticResource Dim}" Margin="0,0,0,16" Text="{Binding [SettingsSub], Source={x:Static i:Loc.Instance}}" />
+        </StackPanel>
+        <DockPanel DockPanel.Dock="Bottom" Margin="0,8,0,0">
+            <Button DockPanel.Dock="Right" Style="{DynamicResource AccentButton}" Click="Save_Click" Content="{Binding [SaveSettings], Source={x:Static i:Loc.Instance}}" />
+            <TextBlock x:Name="SaveStatus" Style="{StaticResource Dim}" VerticalAlignment="Center" />
+        </DockPanel>
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <StackPanel>
+                <!-- Appearance & language -->
+                <Border Style="{StaticResource Card}">
+                    <Grid>
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="260" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /></Grid.RowDefinitions>
+                        <TextBlock Grid.ColumnSpan="2" Style="{StaticResource H2}" Text="{Binding [SecAppearance], Source={x:Static i:Loc.Instance}}" />
+                        <TextBlock Grid.Row="1" Style="{StaticResource Label}" Text="{Binding [Language], Source={x:Static i:Loc.Instance}}" />
+                        <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal">
+                            <ComboBox x:Name="LanguageBox" Width="240" DisplayMemberPath="Value" SelectedValuePath="Key" SelectionChanged="LanguageBox_SelectionChanged" />
+                            <Button Margin="8,0,0,0" Click="LangFolder_Click" Content="{Binding [OpenLanguageFolder], Source={x:Static i:Loc.Instance}}" />
+                            <Button Margin="8,0,0,0" Click="LangTemplate_Click" Content="{Binding [ExportTemplate], Source={x:Static i:Loc.Instance}}" />
+                        </StackPanel>
+                        <TextBlock Grid.Row="2" Style="{StaticResource Label}" Text="{Binding [Theme], Source={x:Static i:Loc.Instance}}" />
+                        <ComboBox Grid.Row="2" Grid.Column="1" x:Name="ThemeBox" Width="240" HorizontalAlignment="Left" SelectionChanged="ThemeBox_SelectionChanged" />
+                        <TextBlock Grid.Row="3" Style="{StaticResource Label}" Text="{Binding [Notifications], Source={x:Static i:Loc.Instance}}" />
+                        <CheckBox Grid.Row="3" Grid.Column="1" x:Name="NotifyBox" VerticalAlignment="Center" Content="{Binding [NotificationsHint], Source={x:Static i:Loc.Instance}}" />
+                    </Grid>
+                </Border>
+
+                <!-- Google OAuth client -->
+                <Border Style="{StaticResource Card}">
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource H2}" Text="{Binding [SecGoogle], Source={x:Static i:Loc.Instance}}" />
+                        <TextBlock Style="{StaticResource Dim}" Margin="0,0,0,10" Text="{Binding [GoogleClientHelp], Source={x:Static i:Loc.Instance}}" />
+                        <Grid>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="260" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions><RowDefinition /><RowDefinition /><RowDefinition /></Grid.RowDefinitions>
+                            <TextBlock Style="{StaticResource Label}" Text="Client ID" />
+                            <TextBox Grid.Column="1" x:Name="ClientIdBox" Margin="0,4" />
+                            <TextBlock Grid.Row="1" Style="{StaticResource Label}" Text="Client secret" />
+                            <PasswordBox Grid.Row="1" Grid.Column="1" x:Name="ClientSecretBox" Margin="0,4" />
+                            <WrapPanel Grid.Row="2" Grid.Column="1" Margin="0,6,0,0">
+                                <Button Style="{DynamicResource ToolButton}" Click="ImportClient_Click" Content="{Binding [ImportClientJson], Source={x:Static i:Loc.Instance}}" />
+                                <Button Style="{DynamicResource ToolButton}" Click="SaveClient_Click" Content="{Binding [SaveClient], Source={x:Static i:Loc.Instance}}" />
+                                <Button Style="{DynamicResource ToolButton}" Click="ClientHelp_Click" Content="{Binding [SetupGuide], Source={x:Static i:Loc.Instance}}" />
+                                <TextBlock x:Name="ClientStatus" Style="{StaticResource Dim}" VerticalAlignment="Center" Margin="6,0,0,6" />
+                            </WrapPanel>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <!-- Startup & mount -->
+                <Border Style="{StaticResource Card}">
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource H2}" Text="{Binding [SecStartup], Source={x:Static i:Loc.Instance}}" />
+                        <CheckBox x:Name="MountAtStartup" Margin="0,4" Content="{Binding [OptMountAtStartup], Source={x:Static i:Loc.Instance}}" />
+                        <CheckBox x:Name="KeepMounted" Margin="0,4" Content="{Binding [OptKeepMounted], Source={x:Static i:Loc.Instance}}" />
+                        <CheckBox x:Name="AutoReconnect" Margin="0,4" Content="{Binding [OptAutoReconnect], Source={x:Static i:Loc.Instance}}" />
+                        <CheckBox x:Name="RestoreConfig" Margin="0,4" Content="{Binding [OptRestoreConfig], Source={x:Static i:Loc.Instance}}" />
+                        <CheckBox x:Name="StartApp" Margin="0,4" Content="{Binding [OptStartApp], Source={x:Static i:Loc.Instance}}" />
+                        <TextBlock Style="{StaticResource Dim}" FontSize="12" Margin="0,6,0,0" Text="{Binding [DriveLetterHint], Source={x:Static i:Loc.Instance}}" />
+                    </StackPanel>
+                </Border>
+
+                <!-- Transfer -->
+                <Border Style="{StaticResource Card}">
+                    <Grid>
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="260" /><ColumnDefinition Width="160" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition />
+                            <RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition />
+                        </Grid.RowDefinitions>
+                        <TextBlock Grid.ColumnSpan="3" Style="{StaticResource H2}" Text="{Binding [SecTransfer], Source={x:Static i:Loc.Instance}}" />
+                        <TextBlock Grid.Row="1" Style="{StaticResource Label}" Text="{Binding [OptRamBuffer], Source={x:Static i:Loc.Instance}}" />
+                        <TextBox Grid.Row="1" Grid.Column="1" x:Name="RamBox" Margin="0,4" />
+                        <TextBlock Grid.Row="1" Grid.Column="2" Style="{StaticResource Dim}" Margin="12,0,0,0" VerticalAlignment="Center" Text="{Binding [OptRamBufferHint], Source={x:Static i:Loc.Instance}}" />
+                        <TextBlock Grid.Row="2" Style="{StaticResource Label}" Text="{Binding [OptReadChunk], Source={x:Static i:Loc.Instance}}" />
+                        <TextBox Grid.Row="2" Grid.Column="1" x:Name="ReadChunkBox" Margin="0,4" />
+                        <TextBlock Grid.Row="3" Style="{StaticResource Label}" Text="{Binding [OptReadAhead], Source={x:Static i:Loc.Instance}}" />
+                        <TextBox Grid.Row="3" Grid.Column="1" x:Name="ReadAheadBox" Margin="0,4" />
+                        <TextBlock Grid.Row="4" Style="{StaticResource Label}" Text="{Binding [OptUploadChunk], Source={x:Static i:Loc.Instance}}" />
+                        <TextBox Grid.Row="4" Grid.Column="1" x:Name="UploadChunkBox" Margin="0,4" />
+                        <TextBlock Grid.Row="5" Style="{StaticResource Label}" Text="{Binding [OptParallel], Source={x:Static i:Loc.Instance}}" />
+                        <TextBox Grid.Row="5" Grid.Column="1" x:Name="ParallelBox" Margin="0,4" />
+                        <TextBlock Grid.Row="6" Style="{StaticResource Label}" Text="{Binding [OptUpLimit], Source={x:Static i:Loc.Instance}}" />
+                        <TextBox Grid.Row="6" Grid.Column="1" x:Name="UpLimitBox" Margin="0,4" />
+                        <TextBlock Grid.Row="6" Grid.Column="2" Style="{StaticResource Dim}" Margin="12,0,0,0" VerticalAlignment="Center" Text="{Binding [ZeroUnlimited], Source={x:Static i:Loc.Instance}}" />
+                        <TextBlock Grid.Row="7" Style="{StaticResource Label}" Text="{Binding [OptDownLimit], Source={x:Static i:Loc.Instance}}" />
+                        <TextBox Grid.Row="7" Grid.Column="1" x:Name="DownLimitBox" Margin="0,4" />
+                        <TextBlock Grid.Row="8" Style="{StaticResource Label}" Text="{Binding [OptDeleteMode], Source={x:Static i:Loc.Instance}}" />
+                        <ComboBox Grid.Row="8" Grid.Column="1" Grid.ColumnSpan="2" x:Name="DeleteModeBox" Width="320" HorizontalAlignment="Left" Margin="0,4" />
+                        <TextBlock Grid.Row="9" Style="{StaticResource Label}" Text="{Binding [OptReportNtfs], Source={x:Static i:Loc.Instance}}" />
+                        <CheckBox Grid.Row="9" Grid.Column="1" Grid.ColumnSpan="2" x:Name="NtfsBox" VerticalAlignment="Center" Content="{Binding [OptReportNtfsHint], Source={x:Static i:Loc.Instance}}" />
+                        <TextBlock Grid.Row="10" Style="{StaticResource Label}" Text="{Binding [OptChangePoll], Source={x:Static i:Loc.Instance}}" />
+                        <TextBox Grid.Row="10" Grid.Column="1" x:Name="PollBox" Margin="0,4" />
+                    </Grid>
+                </Border>
+
+                <!-- Diagnostics -->
+                <Border Style="{StaticResource Card}">
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource H2}" Text="{Binding [SecDiagnostics], Source={x:Static i:Loc.Instance}}" />
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                            <TextBlock Style="{StaticResource Label}" Text="{Binding [LogLevel], Source={x:Static i:Loc.Instance}}" />
+                            <ComboBox x:Name="LogLevelBox" Width="180" />
+                        </StackPanel>
+                        <WrapPanel>
+                            <Button Style="{DynamicResource ToolButton}" Click="OpenLogs_Click" Content="{Binding [OpenLogs], Source={x:Static i:Loc.Instance}}" />
+                            <Button Style="{DynamicResource ToolButton}" Click="ExportDiag_Click" Content="{Binding [ExportDiagnostics], Source={x:Static i:Loc.Instance}}" />
+                            <Button Style="{DynamicResource ToolButton}" Click="StartService_Click" Content="{Binding [StartService], Source={x:Static i:Loc.Instance}}" />
+                        </WrapPanel>
+                        <TextBlock x:Name="DiagInfo" Style="{StaticResource Dim}" Margin="0,8,0,0" FontSize="12" />
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </ScrollViewer>
+    </DockPanel>
+</UserControl>

@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>XCloudSSD.VirtualDrive</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\XCloudSSD.Core\XCloudSSD.Core.csproj" />
+    <ProjectReference Include="..\XCloudSSD.Security\XCloudSSD.Security.csproj" />
+    <ProjectReference Include="..\XCloudSSD.Authentication\XCloudSSD.Authentication.csproj" />
+    <ProjectReference Include="..\XCloudSSD.Metadata\XCloudSSD.Metadata.csproj" />
+    <ProjectReference Include="..\XCloudSSD.Cloud\XCloudSSD.Cloud.csproj" />
+    <ProjectReference Include="..\XCloudSSD.GoogleDrive\XCloudSSD.GoogleDrive.csproj" />
+    <ProjectReference Include="..\XCloudSSD.TeraBox\XCloudSSD.TeraBox.csproj" />
+    <ProjectReference Include="..\XCloudSSD.Transfer\XCloudSSD.Transfer.csproj" />
+    <ProjectReference Include="..\XCloudSSD.Filesystem\XCloudSSD.Filesystem.csproj" />
+  </ItemGroup>
+</Project>

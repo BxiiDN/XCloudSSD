@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>XCloudSSD.Cloud</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\XCloudSSD.Core\XCloudSSD.Core.csproj" />
+  </ItemGroup>
+</Project>

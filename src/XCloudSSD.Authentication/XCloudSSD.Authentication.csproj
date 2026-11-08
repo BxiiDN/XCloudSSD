@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>XCloudSSD.Authentication</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\XCloudSSD.Core\XCloudSSD.Core.csproj" />
+    <ProjectReference Include="..\XCloudSSD.Security\XCloudSSD.Security.csproj" />
+  </ItemGroup>
+</Project>

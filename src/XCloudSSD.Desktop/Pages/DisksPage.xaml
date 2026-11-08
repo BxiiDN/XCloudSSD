@@ -1,0 +1,55 @@
+<UserControl x:Class="XCloudSSD.Desktop.Pages.DisksPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:i="clr-namespace:XCloudSSD.Desktop.Infrastructure">
+    <DockPanel>
+        <StackPanel DockPanel.Dock="Top">
+            <TextBlock Style="{StaticResource H1}" Text="{Binding [NavDisks], Source={x:Static i:Loc.Instance}}" />
+            <TextBlock Style="{StaticResource Dim}" Margin="0,0,0,20" Text="{Binding [DisksSub], Source={x:Static i:Loc.Instance}}" />
+        </StackPanel>
+        <TextBlock x:Name="Empty" DockPanel.Dock="Top" Style="{StaticResource Dim}" Visibility="Collapsed"
+                   Text="{Binding [NoDisksYet], Source={x:Static i:Loc.Instance}}" />
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <ItemsControl x:Name="List">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Border Style="{StaticResource Card}">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="72" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Border Width="56" Height="56" CornerRadius="10" Background="{DynamicResource Surface2Brush}" VerticalAlignment="Top">
+                                    <TextBlock Text="{Binding Letter}" FontSize="20" FontWeight="SemiBold" HorizontalAlignment="Center"
+                                               VerticalAlignment="Center" Foreground="{DynamicResource TextBrush}" />
+                                </Border>
+                                <StackPanel Grid.Column="1">
+                                    <DockPanel>
+                                        <TextBlock DockPanel.Dock="Right" Text="{Binding StateText}" Foreground="{Binding StateBrush}" />
+                                        <TextBlock Text="{Binding Title}" FontSize="16" FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}" />
+                                    </DockPanel>
+                                    <TextBlock Text="{Binding Subtitle}" Style="{StaticResource Dim}" />
+                                    <ProgressBar Style="{DynamicResource Meter}" Value="{Binding UsedFraction, Mode=OneWay}" />
+                                    <TextBlock Text="{Binding CapacityText}" Style="{StaticResource Dim}" FontSize="12" />
+                                    <TextBlock Text="{Binding StateDetail}" Style="{StaticResource Dim}" FontSize="12" Margin="0,4,0,0" />
+                                    <WrapPanel Margin="0,12,0,0">
+                                        <Button Style="{DynamicResource ToolButton}" Tag="{Binding Id}" Click="Open_Click"
+                                                Content="{Binding [OpenInExplorer], Source={x:Static i:Loc.Instance}}" />
+                                        <Button Style="{DynamicResource ToolButton}" Tag="{Binding Id}" Click="Remount_Click"
+                                                Content="{Binding [Remount], Source={x:Static i:Loc.Instance}}" />
+                                        <Button Style="{DynamicResource ToolButton}" Tag="{Binding Id}" Click="Letter_Click"
+                                                Content="{Binding [ChangeLetter], Source={x:Static i:Loc.Instance}}" />
+                                        <Button Style="{DynamicResource ToolButton}" Tag="{Binding Id}" Click="Rename_Click"
+                                                Content="{Binding [Rename], Source={x:Static i:Loc.Instance}}" />
+                                        <Button Style="{DynamicResource ToolButton}" Tag="{Binding Id}" Click="Toggle_Click"
+                                                Content="{Binding ToggleText}" />
+                                    </WrapPanel>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+    </DockPanel>
+</UserControl>

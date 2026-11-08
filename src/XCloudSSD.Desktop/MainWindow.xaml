@@ -1,0 +1,70 @@
+<Window x:Class="XCloudSSD.Desktop.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:i="clr-namespace:XCloudSSD.Desktop.Infrastructure"
+        Title="XCloudSSD" Width="1280" Height="800" MinWidth="960" MinHeight="600"
+        Icon="Assets/xcloudssd.ico"
+        Background="{DynamicResource AppBackground}"
+        FontFamily="{DynamicResource UiFont}"
+        WindowStartupLocation="CenterScreen">
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="232" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <!-- Sidebar -->
+        <Border Background="{DynamicResource SidebarBrush}" BorderBrush="{DynamicResource LineBrush}" BorderThickness="0,0,1,0">
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="20,22,12,20">
+                    <Image Source="Assets/xcloudssd.ico" Width="30" Height="30" />
+                    <StackPanel Margin="10,0,0,0" VerticalAlignment="Center">
+                        <TextBlock Text="XCloudSSD" FontSize="17" FontWeight="SemiBold" Foreground="{DynamicResource TextBrush}" />
+                        <TextBlock Text="{Binding [AppTagline], Source={x:Static i:Loc.Instance}}" FontSize="11" Foreground="{DynamicResource DimBrush}" />
+                    </StackPanel>
+                </StackPanel>
+
+                <Border DockPanel.Dock="Bottom" Margin="16" Padding="12" CornerRadius="8" Background="{DynamicResource SurfaceBrush}">
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal">
+                            <Ellipse x:Name="ServiceDot" Width="8" Height="8" Fill="{DynamicResource ErrBrush}" VerticalAlignment="Center" />
+                            <TextBlock x:Name="ServiceText" Margin="8,0,0,0" FontSize="12" Foreground="{DynamicResource TextBrush}" />
+                        </StackPanel>
+                        <TextBlock x:Name="ServiceSub" FontSize="11" Margin="16,2,0,0" Foreground="{DynamicResource DimBrush}" TextWrapping="Wrap" />
+                    </StackPanel>
+                </Border>
+
+                <StackPanel x:Name="Nav">
+                    <RadioButton Style="{StaticResource NavButton}" Tag="dashboard" Checked="Nav_Checked" IsChecked="True"
+                                 Content="{Binding [NavDashboard], Source={x:Static i:Loc.Instance}}" />
+                    <RadioButton Style="{StaticResource NavButton}" Tag="disks" Checked="Nav_Checked"
+                                 Content="{Binding [NavDisks], Source={x:Static i:Loc.Instance}}" />
+                    <RadioButton Style="{StaticResource NavButton}" Tag="accounts" Checked="Nav_Checked"
+                                 Content="{Binding [NavAccounts], Source={x:Static i:Loc.Instance}}" />
+                    <RadioButton Style="{StaticResource NavButton}" Tag="files" Checked="Nav_Checked"
+                                 Content="{Binding [NavFiles], Source={x:Static i:Loc.Instance}}" />
+                    <RadioButton Style="{StaticResource NavButton}" Tag="games" Checked="Nav_Checked"
+                                 Content="{Binding [NavGames], Source={x:Static i:Loc.Instance}}" />
+                    <RadioButton Style="{StaticResource NavButton}" Tag="transfers" Checked="Nav_Checked"
+                                 Content="{Binding [NavTransfers], Source={x:Static i:Loc.Instance}}" />
+                    <RadioButton Style="{StaticResource NavButton}" Tag="performance" Checked="Nav_Checked"
+                                 Content="{Binding [NavPerformance], Source={x:Static i:Loc.Instance}}" />
+                    <RadioButton Style="{StaticResource NavButton}" Tag="settings" Checked="Nav_Checked"
+                                 Content="{Binding [NavSettings], Source={x:Static i:Loc.Instance}}" />
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <!-- Content -->
+        <DockPanel Grid.Column="1">
+            <Border x:Name="Banner" DockPanel.Dock="Top" Visibility="Collapsed" Margin="28,20,28,0" Padding="14,10"
+                    CornerRadius="8" Background="{DynamicResource Surface2Brush}" BorderBrush="{DynamicResource WarnBrush}" BorderThickness="1">
+                <DockPanel>
+                    <Button x:Name="BannerButton" DockPanel.Dock="Right" Click="BannerButton_Click" Margin="12,0,0,0" />
+                    <TextBlock x:Name="BannerText" VerticalAlignment="Center" TextWrapping="Wrap" Foreground="{DynamicResource TextBrush}" />
+                </DockPanel>
+            </Border>
+            <ContentControl x:Name="PageHost" Margin="28,20,16,16" Focusable="False" />
+        </DockPanel>
+    </Grid>
+</Window>

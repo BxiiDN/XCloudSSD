@@ -1,0 +1,12 @@
+bin/
+obj/
+artifacts/
+out/
+publish/
+*.user
+*.suo
+.vs/
+TestResults/
+*.log
+installer/Output/
+installer/deps/
