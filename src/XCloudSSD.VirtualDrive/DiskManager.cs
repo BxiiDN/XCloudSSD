@@ -133,7 +133,29 @@ public sealed class DiskManager : IDisposable
         var secret = _secrets.Load(accountId);
         if (secret is null || !secret.TryGetValue("cookie", out var cookie) || string.IsNullOrEmpty(cookie))
             return new UnconfiguredProvider("TeraBox sign-in data for this account is missing. Remove the account and add it again.");
-        return new TeraBoxWebProvider(cookie, new Metrics());
+        var provider = new TeraBoxWebProvider(cookie, new Metrics(), null,
+            secret.GetValueOrDefault("jstoken"), secret.GetValueOrDefault("base"));
+        PersistTeraBoxToken(accountId, provider);
+        return provider;
+    }
+
+    /// <summary>Saves renewed jsTokens so a service restart does not need a new sign-in.</summary>
+    private void PersistTeraBoxToken(string accountId, TeraBoxWebProvider provider)
+    {
+        provider.JsTokenRefreshed += token =>
+        {
+            try
+            {
+                var s = _secrets.Load(accountId) ?? new Dictionary<string, string>();
+                s["jstoken"] = token;
+                s["base"] = provider.BaseUrl;
+                _secrets.Save(accountId, s);
+            }
+            catch (Exception ex)
+            {
+                _log.LogWarning("Could not save renewed TeraBox token: {Message}", ex.Message);
+            }
+        };
     }
 
     // ------------------------------------------------------------------ OAuth client
@@ -219,7 +241,7 @@ public sealed class DiskManager : IDisposable
     {
         if (string.IsNullOrWhiteSpace(args.Cookie) || !args.Cookie.Contains("ndus=", StringComparison.Ordinal))
             throw new InvalidOperationException("TeraBox sign-in was not completed (no session cookie). Sign in again.");
-        var provider = new TeraBoxWebProvider(args.Cookie.Trim(), new Metrics());
+        var provider = new TeraBoxWebProvider(args.Cookie.Trim(), new Metrics(), null, args.JsToken, args.BaseUrl);
         try
         {
             await provider.InitializeAsync(ct).ConfigureAwait(false);
@@ -247,7 +269,13 @@ public sealed class DiskManager : IDisposable
                 Label = AccountRecord.DefaultLabel(ProviderKind.TeraBox, ordinal),
                 Enabled = true,
             };
-            _secrets.Save(accountId, new Dictionary<string, string> { ["cookie"] = args.Cookie.Trim() });
+            _secrets.Save(accountId, new Dictionary<string, string>
+            {
+                ["cookie"] = args.Cookie.Trim(),
+                ["jstoken"] = provider.JsToken ?? "",
+                ["base"] = provider.BaseUrl,
+            });
+            PersistTeraBoxToken(accountId, provider);
             _db.UpsertAccount(account);
             var disk = new VirtualDisk(account, provider, Budget, Transfers, _db, _logs.CreateLogger($"Disk-{letter}"));
             _disks[accountId] = disk;

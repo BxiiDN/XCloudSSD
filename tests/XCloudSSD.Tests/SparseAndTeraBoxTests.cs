@@ -182,6 +182,43 @@ public class TeraBoxProtocolTests
     }
 
     [Fact]
+    public async Task JsToken_IsFound_AfterLanguageRedirect()
+    {
+        // TeraBox now answers /main with a redirect to /<language>/main; the token is on that page.
+        var h = new Scripted();
+        h.Respond = (req, _) => req.RequestUri!.AbsolutePath switch
+        {
+            "/main" => Redirect("https://www.terabox.com/id/main?category=all"),
+            "/id/main" => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(MainPage) },
+            "/api/list" => Json("""{"errno":0,"list":[]}"""),
+            _ => Json("""{"errno":0}"""),
+        };
+        var p = new TeraBoxWebProvider("ndus=abc", new Metrics(), h);
+        await p.InitializeAsync(default);
+        Assert.Equal("TOKEN123", p.JsToken);
+        Assert.Contains("jsToken=TOKEN123", h.Requests.Last().Req.RequestUri!.Query);
+    }
+
+    [Fact]
+    public async Task TokenCapturedAtSignIn_IsUsedDirectly()
+    {
+        var h = new Scripted();
+        h.Respond = (req, _) => req.RequestUri!.AbsolutePath == "/api/list" ? Json("""{"errno":0,"list":[]}""") : Json("""{"errno":0}""");
+        var p = new TeraBoxWebProvider("ndus=abc", new Metrics(), h, jsToken: "FROMPAGE", baseUrl: "https://dm.terabox.com");
+        await p.InitializeAsync(default);
+        var list = h.Requests.Single().Req;
+        Assert.Equal("dm.terabox.com", list.RequestUri!.Host);
+        Assert.Contains("jsToken=FROMPAGE", list.RequestUri.Query);
+    }
+
+    private static HttpResponseMessage Redirect(string to)
+    {
+        var r = new HttpResponseMessage(HttpStatusCode.Found);
+        r.Headers.Location = new Uri(to);
+        return r;
+    }
+
+    [Fact]
     public async Task SignedOutSession_IsReportedAsUnauthorized()
     {
         var h = new Scripted { Respond = (_, _) => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("<html>login</html>") } };

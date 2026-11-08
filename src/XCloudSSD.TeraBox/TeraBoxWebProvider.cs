@@ -37,8 +37,12 @@ public sealed class TeraBoxWebProvider : ICloudProvider, IRootOverride
     private string? _jsToken;
     private string? _uploadHost;
 
-    public TeraBoxWebProvider(string cookie, Metrics metrics, HttpMessageHandler? handler = null)
+    public TeraBoxWebProvider(string cookie, Metrics metrics, HttpMessageHandler? handler = null,
+        string? jsToken = null, string? baseUrl = null)
     {
+        if (!string.IsNullOrWhiteSpace(jsToken)) _jsToken = jsToken.Trim();
+        if (Uri.TryCreate(baseUrl, UriKind.Absolute, out var b) && b.Scheme == "https" && IsTeraBoxHost(b.Host))
+            _baseUrl = $"https://{b.Host}";
         _cookie = cookie;
         _metrics = metrics;
         _http = new HttpClient(handler ?? new SocketsHttpHandler
@@ -70,41 +74,86 @@ public sealed class TeraBoxWebProvider : ICloudProvider, IRootOverride
 
     public async Task InitializeAsync(CancellationToken ct)
     {
-        await RefreshJsTokenAsync(ct).ConfigureAwait(false);
-        // Verifies the cookie: listing the root fails when the session is not signed in.
+        // A token captured from the signed-in page is used as-is; otherwise read it from the TeraBox web page.
+        if (_jsToken is null) await RefreshJsTokenAsync(expired: false, ct).ConfigureAwait(false);
+        // Verifies the session: listing the root fails when it is not signed in.
         await ListChildrenAsync(RootKey, ct).ConfigureAwait(false);
     }
 
-    private async Task RefreshJsTokenAsync(CancellationToken ct)
+    /// <summary>The jsToken currently in use (persisted by the service so restarts do not need a new sign-in).</summary>
+    public string? JsToken => _jsToken;
+    public string BaseUrl => _baseUrl;
+
+    /// <summary>Raised when a new jsToken was obtained so it can be saved.</summary>
+    public event Action<string>? JsTokenRefreshed;
+
+    internal static bool IsTeraBoxHost(string host) =>
+        host.Equals("terabox.com", StringComparison.OrdinalIgnoreCase) ||
+        host.EndsWith(".terabox.com", StringComparison.OrdinalIgnoreCase) ||
+        host.EndsWith("1024tera.com", StringComparison.OrdinalIgnoreCase) ||
+        host.EndsWith("1024terabox.com", StringComparison.OrdinalIgnoreCase) ||
+        host.EndsWith("terabox.app", StringComparison.OrdinalIgnoreCase) ||
+        host.EndsWith("teraboxapp.com", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Reads window.jsToken from the TeraBox web page. The page moved from /main to /&lt;language&gt;/main, so redirects
+    /// are followed (cookie only ever sent to TeraBox hosts). The token sits in an inline script: fn("&lt;token&gt;"),
+    /// URL-encoded as fn%28%22&lt;token&gt;%22%29.
+    /// </summary>
+    private async Task RefreshJsTokenAsync(bool expired, CancellationToken ct)
     {
         await _tokenGate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            using var req = NewRequest(HttpMethod.Get, _baseUrl + "/main");
-            using var resp = await SendRawAsync(req, ct).ConfigureAwait(false);
-            if (resp.StatusCode is HttpStatusCode.Found or HttpStatusCode.MovedPermanently &&
-                resp.Headers.Location is { } loc && loc.Host.EndsWith("terabox.com", StringComparison.OrdinalIgnoreCase) &&
-                !loc.AbsolutePath.Contains("login", StringComparison.OrdinalIgnoreCase))
+            foreach (var start in new[] { _baseUrl + "/main", _baseUrl + "/" })
             {
-                _baseUrl = $"{loc.Scheme}://{loc.Host}";
+                var url = start;
+                for (var hop = 0; hop < 6; hop++)
+                {
+                    using var req = new HttpRequestMessage(HttpMethod.Get, url);
+                    req.Headers.TryAddWithoutValidation("Cookie", _cookie);
+                    req.Headers.TryAddWithoutValidation("User-Agent", UserAgent);
+                    req.Headers.TryAddWithoutValidation("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
+                    req.Headers.TryAddWithoutValidation("Accept-Language", "en-US,en;q=0.9");
+                    using var resp = await SendRawAsync(req, ct).ConfigureAwait(false);
+                    if ((int)resp.StatusCode is >= 300 and < 400 && resp.Headers.Location is { } loc)
+                    {
+                        var next = loc.IsAbsoluteUri ? loc : new Uri(new Uri(url), loc);
+                        if (!IsTeraBoxHost(next.Host) || next.AbsolutePath.Contains("login", StringComparison.OrdinalIgnoreCase)) break;
+                        _baseUrl = $"https://{next.Host}";
+                        url = next.ToString();
+                        continue;
+                    }
+                    var token = ExtractJsToken(await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false));
+                    if (!string.IsNullOrEmpty(token))
+                    {
+                        _jsToken = token;
+                        JsTokenRefreshed?.Invoke(token);
+                        return;
+                    }
+                    break;
+                }
             }
-            var html = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
-            var token = Between(html, "fn%28%22", "%22%29");
-            if (string.IsNullOrEmpty(token))
-            {
-                // Fall back to the site root (AList reads it from the base URL).
-                using var req2 = NewRequest(HttpMethod.Get, _baseUrl + "/");
-                using var resp2 = await SendRawAsync(req2, ct).ConfigureAwait(false);
-                token = Between(await resp2.Content.ReadAsStringAsync(ct).ConfigureAwait(false), "fn%28%22", "%22%29");
-            }
-            if (string.IsNullOrEmpty(token))
-                throw new CloudException(CloudErrorKind.Unauthorized, "TeraBox session is not signed in (no jsToken). Remove the account and sign in again.");
-            _jsToken = token;
+            if (_jsToken is not null && !expired) return; // keep the token captured at sign-in
+            throw new CloudException(CloudErrorKind.Unauthorized,
+                expired
+                    ? "TeraBox session expired (jsToken could not be renewed). Remove the TeraBox account and sign in again."
+                    : "TeraBox session is not signed in (no jsToken). Remove the account and sign in again.");
         }
         finally
         {
             _tokenGate.Release();
         }
+    }
+
+    internal static string? ExtractJsToken(string html)
+    {
+        var t = Between(html, "fn%28%22", "%22%29");
+        if (!string.IsNullOrEmpty(t)) return Uri.UnescapeDataString(t);
+        t = Between(html, "window.jsToken%20%3D%20", "%3B");
+        if (!string.IsNullOrEmpty(t) && !t.StartsWith('a')) return Uri.UnescapeDataString(t).Trim('"');
+        t = Between(html, "\"jsToken\":\"", "\"");
+        return string.IsNullOrEmpty(t) ? null : t;
     }
 
     private static string? Between(string text, string start, string end)
@@ -530,7 +579,7 @@ public sealed class TeraBoxWebProvider : ICloudProvider, IRootOverride
     private async Task<JsonObject> ApiAsync(HttpMethod method, string path, Dictionary<string, string> query,
         Dictionary<string, string>? form, CancellationToken ct)
     {
-        if (_jsToken is null) await RefreshJsTokenAsync(ct).ConfigureAwait(false);
+        if (_jsToken is null) await RefreshJsTokenAsync(expired: false, ct).ConfigureAwait(false);
         return await Retry.RunAsync(async _ =>
         {
             for (var hop = 0; ; hop++)
@@ -555,7 +604,7 @@ public sealed class TeraBoxWebProvider : ICloudProvider, IRootOverride
                 if (errno == 0) return json;
                 if (errno == 4000023 && hop < 1)
                 {
-                    await RefreshJsTokenAsync(ct).ConfigureAwait(false);
+                    await RefreshJsTokenAsync(expired: true, ct).ConfigureAwait(false);
                     continue;
                 }
                 if (errno == -6 && hop < 2 && resp.Headers.TryGetValues("Url-Domain-Prefix", out var prefixes) &&

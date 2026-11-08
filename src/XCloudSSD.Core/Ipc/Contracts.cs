@@ -127,6 +127,10 @@ public sealed class AddTeraBoxArgs
 {
     /// <summary>Session cookie header for terabox.com, captured after the user signed in inside XCloudSSD.</summary>
     public string Cookie { get; set; } = "";
+    /// <summary>window.jsToken read from the signed-in TeraBox page (may be empty).</summary>
+    public string? JsToken { get; set; }
+    /// <summary>Origin of the signed-in TeraBox page, e.g. https://www.terabox.com.</summary>
+    public string? BaseUrl { get; set; }
     public char? DriveLetter { get; set; }
 }
 

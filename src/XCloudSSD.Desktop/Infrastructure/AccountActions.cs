@@ -197,7 +197,7 @@ public static class AccountActions
         {
             Mouse(true);
             var added = await ServiceHub.Client.CallAsync<AccountDto>(Commands.AddTeraBox,
-                new AddTeraBoxArgs { Cookie = login.CookieHeader }, 180_000);
+                new AddTeraBoxArgs { Cookie = login.CookieHeader, JsToken = login.JsToken, BaseUrl = login.BaseUrl }, 180_000);
             await ServiceHub.RefreshAsync();
             Mouse(false);
             if (added is not null)
