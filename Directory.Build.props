@@ -8,9 +8,9 @@
     <Company>XCloudSSD</Company>
     <Product>XCloudSSD</Product>
     <Copyright>Copyright (c) 2026 XCloudSSD contributors</Copyright>
-    <Version>1.3.1</Version>
-    <AssemblyVersion>1.3.1.0</AssemblyVersion>
-    <FileVersion>1.3.1.0</FileVersion>
+    <Version>1.3.2</Version>
+    <AssemblyVersion>1.3.2.0</AssemblyVersion>
+    <FileVersion>1.3.2.0</FileVersion>
     <InvariantGlobalization>false</InvariantGlobalization>
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
     <NoWarn>$(NoWarn);CA1416;NU1701</NoWarn>

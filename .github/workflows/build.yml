@@ -164,7 +164,7 @@ jobs:
             choco install innosetup --no-progress -y | Out-Null
             $iscc = Get-ChildItem "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
           }
-          & $iscc.FullName /DAppVersion=1.3.1 /DSourceDir="$PWD\out\app" /DWinFspMsi="$PWD\deps\winfsp.msi" /DRepoDir="$PWD" /O"$PWD\out" installer\XCloudSSD.iss
+          & $iscc.FullName /DAppVersion=1.3.2 /DSourceDir="$PWD\out\app" /DWinFspMsi="$PWD\deps\winfsp.msi" /DRepoDir="$PWD" /O"$PWD\out" installer\XCloudSSD.iss
           if ($LASTEXITCODE -ne 0) { throw "ISCC failed" }
 
       - name: Portable zip

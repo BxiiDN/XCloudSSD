@@ -4,7 +4,7 @@
 (`D:`, `E:`, …) yang muncul di *This PC → Devices and drives*. File yang ditulis masuk dulu ke cache
 lokal rclone (di C: secara default) lalu diunggah di latar belakang; file yang dibaca disimpan di cache untuk dipakai ulang.
 
-> Status: v1.3.1. Drive dipasang oleh **rclone** (dibundel) dengan **cache lokal di disk** (default
+> Status: v1.3.2. Drive dipasang oleh **rclone** (dibundel) dengan **cache lokal di disk** (default
 > `C:\ProgramData\XCloudSSD\Cache`, bisa diganti di Settings). Google Drive lewat backend `drive` resmi rclone.
 > **TeraBox didukung lewat rclone**: rclone resmi belum punya backend TeraBox, jadi XCloudSSD menjalankan jembatan
 > WebDAV lokal (127.0.0.1, password acak) yang meneruskan ke konektor TeraBox XCloudSSD (antarmuka web TeraBox,

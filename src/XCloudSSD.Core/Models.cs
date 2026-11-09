@@ -42,7 +42,11 @@ public sealed record QuotaInfo(long? TotalBytes, long UsedBytes)
     public long? FreeBytes => TotalBytes is { } t ? Math.Max(0, t - UsedBytes) : null;
 }
 
-public sealed record AccountIdentity(string DisplayName, string Email);
+public sealed record AccountIdentity(string DisplayName, string Email)
+{
+    /// <summary>Provider's stable user id (TeraBox "uk"), used to detect the same account added twice.</summary>
+    public string? UserId { get; init; }
+}
 
 /// <summary>A file or folder as seen in the cloud.</summary>
 public sealed class CloudItem
@@ -108,6 +112,8 @@ public sealed class AccountRecord
     public DateTimeOffset AddedAt { get; init; } = DateTimeOffset.UtcNow;
     /// <summary>Volume label shown in Explorer, e.g. "XCloudSSD Google 01". User-renamable (max 32 chars).</summary>
     public string Label { get; set; } = "";
+    /// <summary>Provider user id (TeraBox "uk") of the signed-in account, once known.</summary>
+    public string RemoteUserId { get; set; } = "";
 
     public static string DefaultLabel(ProviderKind kind, int ordinal)
         => kind == ProviderKind.GoogleDrive

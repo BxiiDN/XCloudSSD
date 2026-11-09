@@ -144,6 +144,22 @@ public class TeraBoxProtocolTests
         Assert.Equal(2, h.Requests.Count(r => r.Req.RequestUri!.AbsolutePath == "/main"));
     }
 
+    [Fact]
+    public async Task Identity_ReadsUkNameAndMaskedEmail()
+    {
+        var h = new Scripted();
+        h.Respond = (req, body) => req.RequestUri!.AbsolutePath == "/api/user/getinfo"
+            ? Json("""{"errno":0,"records":[{"uk":4400123456789,"uname":"user_x","nick_name":"Abian","email":"al***@gmail.com"}]}""")
+            : Json("""{"errno":0,"list":[]}""");
+        var p = new TeraBoxWebProvider("ndus=abc", new Metrics(), h, jsToken: "T");
+        var id = await p.GetIdentityAsync(default);
+        Assert.Equal("4400123456789", id.UserId);
+        Assert.Equal("Abian", id.DisplayName);
+        Assert.Equal("al***@gmail.com", id.Email);
+        Assert.Equal("Yx-1", TeraBoxWebProvider.SessionId("lang=en; ndus=Yx-1; csrfToken=z"));
+        Assert.Null(TeraBoxWebProvider.SessionId("lang=en"));
+    }
+
     [Theory]
     [InlineData(10L, 4 << 20)]
     [InlineData(4L << 30, 4 << 20)]

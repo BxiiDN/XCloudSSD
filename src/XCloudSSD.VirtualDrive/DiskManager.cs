@@ -90,6 +90,11 @@ public sealed class DiskManager : IDisposable
                 await disk.StartAsync(Settings, ct).ConfigureAwait(false);
                 return;
             }
+            catch (DuplicateAccountException ex)
+            {
+                _log.LogError("{Letter}: not mounted: {Message}", disk.Account.DriveLetter, ex.Message);
+                return;
+            }
             catch (Exception ex)
             {
                 _log.LogWarning("Mount of {Letter}: failed (attempt {Attempt}): {Message}", disk.Account.DriveLetter, attempt, ex.Message);
@@ -123,7 +128,56 @@ public sealed class DiskManager : IDisposable
         if (disk.Account.Provider == ProviderKind.GoogleDrive)
             disk.NativeRcloneRemote = () => GoogleRcloneRemote(accountId);
         disk.BridgePassword = () => BridgePassword(accountId);
+        disk.IdentityCheck = identity => ClaimIdentity(disk, identity);
         return disk;
+    }
+
+    private string? NdusOf(string accountId) =>
+        _secrets.Load(accountId)?.GetValueOrDefault("cookie") is { } c ? TeraBoxWebProvider.SessionId(c) : null;
+
+    private readonly object _identityLock = new();
+
+    /// <summary>
+    /// Called by a disk once it knows which cloud user it is signed in as. Two drives for the same TeraBox account
+    /// would show the same files, so only the earliest-added one is mounted; the other reports why.
+    /// Returns an error message for <paramref name="disk"/> or null when it may mount.
+    /// </summary>
+    private string? ClaimIdentity(VirtualDisk disk, AccountIdentity identity)
+    {
+        List<VirtualDisk> toStop = new();
+        string? error = null;
+        lock (_identityLock)
+        {
+            var a = disk.Account;
+            var changed = false;
+            if (identity.UserId is { Length: > 0 } uid && a.RemoteUserId != uid) { a.RemoteUserId = uid; changed = true; }
+            if (a.Provider == ProviderKind.TeraBox && !string.IsNullOrEmpty(identity.Email) && a.Email.StartsWith("TeraBox account", StringComparison.Ordinal))
+            {
+                a.Email = identity.Email;
+                a.DisplayName = identity.DisplayName;
+                changed = true;
+            }
+            if (changed) _db.UpsertAccount(a);
+            if (a.Provider != ProviderKind.TeraBox) return null;
+            var session = NdusOf(a.Id);
+            foreach (var other in _disks.Values.Where(d => d != disk && d.Account.Provider == ProviderKind.TeraBox && d.Account.Enabled))
+            {
+                var same = (!string.IsNullOrEmpty(a.RemoteUserId) && a.RemoteUserId == other.Account.RemoteUserId)
+                           || (session is not null && session == NdusOf(other.Account.Id));
+                if (!same) continue;
+                if (other.Account.AddedAt <= a.AddedAt)
+                {
+                    error = $"Same TeraBox account as {other.Account.DriveLetter}: ({other.Account.Label}) — both drives would show the same files. " +
+                            $"Remove {a.DriveLetter}: in Cloud Accounts and add it again, signing in with a different TeraBox account.";
+                    break;
+                }
+                toStop.Add(other); // this disk was added first: it keeps the account
+            }
+        }
+        foreach (var o in toStop)
+            _ = Task.Run(() => o.MarkDuplicate($"Same TeraBox account as {disk.Account.DriveLetter}: ({disk.Account.Label}) — both drives would show the same files. " +
+                                               $"Remove {o.Account.DriveLetter}: in Cloud Accounts and add it again, signing in with a different TeraBox account."));
+        return error;
     }
 
     private string BridgePassword(string accountId)
@@ -292,10 +346,30 @@ public sealed class DiskManager : IDisposable
         var newId = "t-" + Guid.NewGuid().ToString("N")[..12];
         var provider = new TeraBoxWebProvider(args.Cookie.Trim(), new Metrics(), null, args.JsToken, args.BaseUrl,
             new SparseSizeStore(AppPaths.StoreDir, newId));
+        AccountIdentity? identity = null;
         try
         {
             await provider.InitializeAsync(ct).ConfigureAwait(false);
             await provider.GetQuotaAsync(ct).ConfigureAwait(false);
+            try
+            {
+                identity = await provider.GetIdentityAsync(ct).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is CloudException or HttpRequestException or System.Text.Json.JsonException or InvalidOperationException && ex is not DuplicateAccountException)
+            {
+                _log.LogWarning("TeraBox user info not available: {Message}", ex.Message);
+            }
+            // Multi-account means different accounts: refuse a second drive for the same TeraBox account/session.
+            var session = TeraBoxWebProvider.SessionId(args.Cookie);
+            foreach (var other in _disks.Values.Where(d => d.Account.Provider == ProviderKind.TeraBox))
+            {
+                var sameUser = identity?.UserId is { } uid && uid == other.Account.RemoteUserId;
+                var sameSession = session is not null && session == NdusOf(other.Account.Id);
+                if (sameUser || sameSession)
+                    throw new InvalidOperationException(
+                        $"This TeraBox account{(string.IsNullOrEmpty(identity?.Email) ? "" : " (" + identity!.Email + ")")} is already connected as " +
+                        $"{other.Account.DriveLetter}: ({other.Account.Label}). Sign in with a different TeraBox account.");
+            }
         }
         catch
         {
@@ -313,8 +387,9 @@ public sealed class DiskManager : IDisposable
             {
                 Id = accountId,
                 Provider = ProviderKind.TeraBox,
-                DisplayName = "TeraBox",
-                Email = $"TeraBox account {ordinal:00}",
+                DisplayName = identity?.DisplayName ?? "TeraBox",
+                Email = string.IsNullOrEmpty(identity?.Email) ? $"TeraBox account {ordinal:00}" : identity!.Email,
+                RemoteUserId = identity?.UserId ?? "",
                 DriveLetter = letter,
                 Label = AccountRecord.DefaultLabel(ProviderKind.TeraBox, ordinal),
                 Enabled = true,

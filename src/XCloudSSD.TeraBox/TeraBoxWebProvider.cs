@@ -171,12 +171,25 @@ public sealed class TeraBoxWebProvider : ICloudProvider, IRootOverride
 
     // ------------------------------------------------------------------ identity / quota
 
+    /// <summary>
+    /// Signed-in user from /api/user/getinfo (records[0]: uk, nick_name/uname, masked email). "uk" identifies the
+    /// account, so the same TeraBox account cannot be mounted twice by mistake.
+    /// </summary>
     public async Task<AccountIdentity> GetIdentityAsync(CancellationToken ct)
     {
-        // The web interface's user-info endpoint is not part of the verified reference; show a neutral name.
-        await Task.CompletedTask.ConfigureAwait(false);
-        return new AccountIdentity("TeraBox", "");
+        var json = await ApiAsync(HttpMethod.Get, "/api/user/getinfo", new() { ["need_relation"] = "0", ["need_secret_info"] = "1" }, null, ct)
+            .ConfigureAwait(false);
+        var rec = (json["records"] as JsonArray)?.FirstOrDefault() as JsonObject ?? json["data"] as JsonObject;
+        string? Str(string key) => rec?[key] is JsonValue v ? v.ToString() : null;
+        var uk = Str("uk");
+        var name = Str("nick_name") is { Length: > 0 } n ? n : Str("uname") is { Length: > 0 } u ? u : "TeraBox";
+        var email = Str("email") is { Length: > 0 } e ? e : Str("uname") ?? "";
+        return new AccountIdentity(name, email) { UserId = string.IsNullOrEmpty(uk) ? null : uk };
     }
+
+    /// <summary>Value of the "ndus" session cookie (identifies the signed-in session).</summary>
+    public static string? SessionId(string cookieHeader) =>
+        cookieHeader.Split(';').Select(p => p.Trim()).FirstOrDefault(p => p.StartsWith("ndus=", StringComparison.Ordinal))?[5..];
 
     public async Task<QuotaInfo> GetQuotaAsync(CancellationToken ct)
     {

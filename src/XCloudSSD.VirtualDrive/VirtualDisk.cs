@@ -60,6 +60,8 @@ public sealed class VirtualDisk : IDisposable
     /// WebDAV bridge (TeraBox), which serves <see cref="Provider"/> to rclone's webdav backend.
     /// </summary>
     public Func<RcloneRemote>? NativeRcloneRemote { get; set; }
+    /// <summary>Checks the signed-in cloud user against the other drives; returns an error when it is a duplicate.</summary>
+    public Func<AccountIdentity, string?>? IdentityCheck { get; set; }
     /// <summary>Per-account secret for the local WebDAV bridge (kept DPAPI-encrypted by the service).</summary>
     public Func<string>? BridgePassword { get; set; }
     public MountEngine Engine { get; private set; }
@@ -97,6 +99,7 @@ public sealed class VirtualDisk : IDisposable
             await RefreshQuotaAsync(ct).ConfigureAwait(false);
             _changeToken = await Provider.GetChangeTokenAsync(ct).ConfigureAwait(false);
             online = true;
+            await CheckIdentityAsync(ct).ConfigureAwait(false);
         }
         catch (CloudException ex) when (ex.Kind == CloudErrorKind.Unauthorized)
         {
@@ -129,6 +132,36 @@ public sealed class VirtualDisk : IDisposable
         }
         if (online) SetState(ConnectionState.Online);
         StartLoop();
+    }
+
+    private async Task CheckIdentityAsync(CancellationToken ct)
+    {
+        if (IdentityCheck is null) return;
+        AccountIdentity identity;
+        try
+        {
+            identity = await Provider.GetIdentityAsync(ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is CloudException or HttpRequestException or System.Text.Json.JsonException or InvalidOperationException && ex is not DuplicateAccountException)
+        {
+            // User info is optional; the session cookie is still compared.
+            identity = new AccountIdentity("", "");
+            _log.LogWarning("{Letter}: user info not available: {Message}", Account.DriveLetter, ex.Message);
+        }
+        if (IdentityCheck(identity) is { } error)
+        {
+            SetState(ConnectionState.Error, error);
+            throw new DuplicateAccountException(error);
+        }
+        _log.LogInformation("{Letter}: signed in as {Name} {Email} (id {Id})", Account.DriveLetter, identity.DisplayName, identity.Email, identity.UserId ?? "?");
+    }
+
+    /// <summary>Unmounts this drive because another drive already shows the same cloud account.</summary>
+    public void MarkDuplicate(string message)
+    {
+        Stop(TimeSpan.FromSeconds(60));
+        SetState(ConnectionState.Error, message);
+        _log.LogError("{Letter}: {Message}", Account.DriveLetter, message);
     }
 
     private async Task MountRcloneAsync(AppSettings settings, CancellationToken ct)
@@ -480,3 +513,6 @@ public sealed class VirtualDisk : IDisposable
 
     internal static string Invariant(long v) => v.ToString(CultureInfo.InvariantCulture);
 }
+
+/// <summary>The drive was not mounted because another drive is signed in to the same cloud account.</summary>
+public sealed class DuplicateAccountException(string message) : InvalidOperationException(message);
