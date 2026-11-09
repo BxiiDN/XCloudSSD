@@ -1,6 +1,15 @@
 # Hasil pengujian
 
-## v1.3.0 — rclone + cache lokal (hasil CI diisi setelah run selesai)
+## v1.3.0 — rclone + cache lokal — run https://github.com/BxiiDN/XCloudSSD/actions/runs/42540074971 (sukses)
+
+* rclone v1.75.2 resmi diunduh di CI, SHA-256 dicocokkan dengan SHA256SUMS rilis, dibundel di installer & portable.
+* Unit test 56/56, integration test 14/14 (WinFsp + **mount rclone sungguhan**), service smoke 1/1.
+* Jalur TeraBox (rclone → webdav → jembatan XCloudSSD → provider uji di memori): drive tampil sebagai disk tetap
+  ber-filesystem **NTFS** dengan kapasitas = kuota cloud; file 96 MiB dipesan ukurannya lalu ditulis tidak berurutan,
+  di-rename, dibaca balik dari cache, lalu terunggah utuh (MD5 cocok); hapus file ikut terhapus di cloud.
+* File yang masih menunggu upload saat drive dilepas tetap di cache C: dan terunggah setelah drive dipasang lagi.
+* `XCloudSSDService.exe --selftest-rclone` dari folder publish dan dari instalasi: `rclone 1.75.2 mount OK (filesystem NTFS)`.
+* **Belum diuji dengan akun Google/TeraBox sungguhan** (CI tidak punya akun).
 
 ## Pembaruan v1.2.1 — upload TeraBox "31045 user not exists"
 * Server upload TeraBox dipilih sesuai domain & region akun (mis. `jp-data.1024tera.com` untuk akun di
