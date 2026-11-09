@@ -60,6 +60,8 @@ public sealed class VirtualDisk : IDisposable
     /// WebDAV bridge (TeraBox), which serves <see cref="Provider"/> to rclone's webdav backend.
     /// </summary>
     public Func<RcloneRemote>? NativeRcloneRemote { get; set; }
+    /// <summary>Per-account secret for the local WebDAV bridge (kept DPAPI-encrypted by the service).</summary>
+    public Func<string>? BridgePassword { get; set; }
     public MountEngine Engine { get; private set; }
     public RcloneStatus? CacheStatus => _rclone?.Status;
     public string? CacheDirectory { get; private set; }
@@ -140,14 +142,19 @@ public sealed class VirtualDisk : IDisposable
         }
         else
         {
-            bridge = new CloudWebDavServer(Provider, _log, settings.DeleteMode == DeleteMode.Permanent);
+            // Port and password stay the same across restarts (rclone's cache folder name depends on them).
+            var portKey = $"bridgeport:{Account.Id}";
+            var port = int.TryParse(_db?.GetValue(portKey), out var saved) ? saved : 20000 + (int)((uint)Account.Id.GetHashCode() % 20000);
+            bridge = new CloudWebDavServer(Provider, _log, settings.DeleteMode == DeleteMode.Permanent,
+                password: BridgePassword?.Invoke(), preferredPort: port);
             bridge.Start();
+            _db?.SetValue(portKey, bridge.Port.ToString(CultureInfo.InvariantCulture));
             remote = new RcloneRemote("webdav", new Dictionary<string, string>
             {
                 ["url"] = bridge.Url,
                 ["vendor"] = "other",
                 ["user"] = bridge.User,
-                ["pass"] = RcloneObscure.Obscure(bridge.Password),
+                ["pass"] = RcloneObscure.Obscure(bridge.Password, deterministic: true),
             });
         }
         var cacheDir = Path.Combine(settings.EffectiveCacheDirectory, Account.Id);

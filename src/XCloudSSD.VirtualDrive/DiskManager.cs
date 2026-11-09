@@ -119,12 +119,21 @@ public sealed class DiskManager : IDisposable
     /// <summary>Google Drive is mounted with rclone's own "drive" backend; TeraBox goes through the WebDAV bridge.</summary>
     private VirtualDisk Attach(VirtualDisk disk)
     {
+        var accountId = disk.Account.Id;
         if (disk.Account.Provider == ProviderKind.GoogleDrive)
-        {
-            var accountId = disk.Account.Id;
             disk.NativeRcloneRemote = () => GoogleRcloneRemote(accountId);
-        }
+        disk.BridgePassword = () => BridgePassword(accountId);
         return disk;
+    }
+
+    private string BridgePassword(string accountId)
+    {
+        var s = _secrets.Load(accountId) ?? new Dictionary<string, string>();
+        if (s.TryGetValue("bridge_pass", out var p) && p.Length >= 32) return p;
+        p = Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(24));
+        s["bridge_pass"] = p;
+        _secrets.Save(accountId, s);
+        return p;
     }
 
     /// <summary>

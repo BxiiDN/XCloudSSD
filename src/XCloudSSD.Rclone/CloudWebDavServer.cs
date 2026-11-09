@@ -32,16 +32,17 @@ public sealed class CloudWebDavServer : IDisposable
     private (QuotaInfo Quota, DateTime At)? _quota;
     private readonly string _expectedAuth;
 
-    public CloudWebDavServer(ICloudProvider provider, ILogger log, bool permanentDelete = false, TimeSpan? listCacheTtl = null)
+    public CloudWebDavServer(ICloudProvider provider, ILogger log, bool permanentDelete = false, TimeSpan? listCacheTtl = null,
+        string? password = null, int preferredPort = 0)
     {
         _provider = provider;
         _log = log;
         _permanentDelete = permanentDelete;
         _listTtl = listCacheTtl ?? TimeSpan.FromSeconds(10);
         User = "xcs";
-        Password = Convert.ToHexString(RandomNumberGenerator.GetBytes(24));
+        Password = string.IsNullOrEmpty(password) ? Convert.ToHexString(RandomNumberGenerator.GetBytes(24)) : password;
         _expectedAuth = "Basic " + Convert.ToBase64String(Encoding.UTF8.GetBytes($"{User}:{Password}"));
-        Port = FreePort();
+        Port = preferredPort > 0 && IsFree(preferredPort) ? preferredPort : FreePort();
         _listener.Prefixes.Add($"http://127.0.0.1:{Port}/");
     }
 
@@ -54,6 +55,21 @@ public sealed class CloudWebDavServer : IDisposable
     {
         _listener.Start();
         _ = Task.Run(AcceptLoopAsync);
+    }
+
+    private static bool IsFree(int port)
+    {
+        try
+        {
+            var l = new TcpListener(IPAddress.Loopback, port);
+            l.Start();
+            l.Stop();
+            return true;
+        }
+        catch (SocketException)
+        {
+            return false;
+        }
     }
 
     private static int FreePort()

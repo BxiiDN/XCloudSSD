@@ -145,4 +145,44 @@ public class RcloneBridgeTests
         Assert.Equal("SECRET", env["RCLONE_CONFIG_XCS_CLIENT_SECRET"]);
         Assert.Equal("1.75.2", RcloneInfo.ParseVersion("rclone v1.75.2"));
     }
+
+    [Fact]
+    public void DeterministicObscure_IsStable_AndReversible()
+    {
+        Assert.Equal(RcloneObscure.Obscure("bridge-pass", deterministic: true), RcloneObscure.Obscure("bridge-pass", deterministic: true));
+        Assert.Equal("bridge-pass", RcloneObscure.Reveal(RcloneObscure.Obscure("bridge-pass", deterministic: true)));
+    }
+
+    [Fact]
+    public void CachedFiles_FromAnOlderCacheFolder_AreMovedIntoTheCurrentOne()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "xcs-orphan-" + Guid.NewGuid().ToString("N")[..8]);
+        try
+        {
+            string F(params string[] p) => Path.Combine([root, .. p]);
+            Directory.CreateDirectory(F("vfs", "xcs{NEW01}"));
+            Directory.CreateDirectory(F("vfsMeta", "xcs{NEW01}"));
+            Directory.CreateDirectory(F("vfs", "xcs{OLD01}", "Game"));
+            Directory.CreateDirectory(F("vfsMeta", "xcs{OLD01}", "Game"));
+            File.WriteAllText(F("vfs", "xcs{OLD01}", "Game", "save.dat"), "data");
+            File.WriteAllText(F("vfsMeta", "xcs{OLD01}", "Game", "save.dat"), "{\"Dirty\":true}");
+            Directory.CreateDirectory(F("vfsMeta", "other"));
+            File.WriteAllText(F("vfsMeta", "other", "x"), "not ours");
+
+            var orphan = RcloneMount.FindOrphans(F("vfs", "xcs{NEW01}"), F("vfsMeta", "xcs{NEW01}"));
+            Assert.NotNull(orphan);
+            Assert.Equal(1, orphan!.Files);
+            RcloneMount.MergeCache(orphan);
+
+            Assert.Equal("data", File.ReadAllText(F("vfs", "xcs{NEW01}", "Game", "save.dat")));
+            Assert.True(File.Exists(F("vfsMeta", "xcs{NEW01}", "Game", "save.dat")));
+            Assert.False(Directory.Exists(F("vfsMeta", "xcs{OLD01}")));
+            Assert.True(File.Exists(F("vfsMeta", "other", "x")));
+            Assert.Null(RcloneMount.FindOrphans(F("vfs", "xcs{NEW01}"), F("vfsMeta", "xcs{NEW01}")));
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
 }

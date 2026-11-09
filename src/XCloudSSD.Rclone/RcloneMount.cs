@@ -151,6 +151,119 @@ public sealed class RcloneMount : IDisposable
     public async Task StartAsync(CancellationToken ct)
     {
         if (IsRunning) return;
+        await StartProcessAsync(ct).ConfigureAwait(false);
+        // rclone names the cache folder after the remote plus a hash of its settings. If a setting changed (e.g. the
+        // bridge port), files still waiting for upload sit in the old folder: move them over and start again so
+        // rclone uploads them.
+        try
+        {
+            if (await FindOrphanedCacheAsync(ct).ConfigureAwait(false) is { } adopt)
+            {
+                _log.LogWarning("{Letter}: adopting {Count} cached file(s) from an earlier rclone cache folder.", _opt.DriveLetter, adopt.Files);
+                QuitProcess();
+                MergeCache(adopt);
+                await StartProcessAsync(ct).ConfigureAwait(false);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or HttpRequestException or InvalidOperationException or JsonException)
+        {
+            _log.LogWarning("{Letter}: could not check older cache folders: {Message}", _opt.DriveLetter, ex.Message);
+            if (!IsRunning) await StartProcessAsync(ct).ConfigureAwait(false);
+        }
+        _poll = new Timer(_ => _ = PollAsync(), null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2));
+    }
+
+    internal sealed record OrphanCache(string DataRoot, string MetaRoot, List<(string Data, string Meta)> Orphans, int Files);
+
+    private async Task<OrphanCache?> FindOrphanedCacheAsync(CancellationToken ct)
+    {
+        var vfs = await RcAsync("vfs/stats", ct).ConfigureAwait(false);
+        var dc = vfs?["diskCache"] as JsonObject;
+        var data = StripLongPrefix(dc?["path"]?.GetValue<string>());
+        var meta = StripLongPrefix(dc?["pathMeta"]?.GetValue<string>());
+        if (data is null || meta is null) return null;
+        return FindOrphans(data, meta);
+    }
+
+    internal static OrphanCache? FindOrphans(string dataRoot, string metaRoot)
+    {
+        var dataParent = Path.GetDirectoryName(dataRoot);
+        var metaParent = Path.GetDirectoryName(metaRoot);
+        if (dataParent is null || metaParent is null || !Directory.Exists(metaParent)) return null;
+        var current = Path.GetFileName(metaRoot);
+        var orphans = new List<(string, string)>();
+        var files = 0;
+        foreach (var dir in Directory.GetDirectories(metaParent, RemoteName + "*"))
+        {
+            var name = Path.GetFileName(dir);
+            if (string.Equals(name, current, StringComparison.OrdinalIgnoreCase)) continue;
+            if (name != RemoteName && !name.StartsWith(RemoteName + "{", StringComparison.Ordinal)) continue;
+            var count = Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories).Count();
+            if (count == 0) continue;
+            orphans.Add((Path.Combine(dataParent, name), dir));
+            files += count;
+        }
+        return orphans.Count == 0 ? null : new OrphanCache(dataRoot, metaRoot, orphans, files);
+    }
+
+    /// <summary>Moves cached files (data + metadata) from older cache folders into the current one; never overwrites.</summary>
+    internal static void MergeCache(OrphanCache c)
+    {
+        foreach (var (data, meta) in c.Orphans)
+        {
+            foreach (var metaFile in Directory.EnumerateFiles(meta, "*", SearchOption.AllDirectories).ToList())
+            {
+                var rel = Path.GetRelativePath(meta, metaFile);
+                var dataFile = Path.Combine(data, rel);
+                var targetMeta = Path.Combine(c.MetaRoot, rel);
+                var targetData = Path.Combine(c.DataRoot, rel);
+                if (File.Exists(targetMeta)) continue;
+                Directory.CreateDirectory(Path.GetDirectoryName(targetMeta)!);
+                if (File.Exists(dataFile))
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(targetData)!);
+                    File.Move(dataFile, targetData, overwrite: true);
+                }
+                File.Move(metaFile, targetMeta);
+            }
+            TryDelete(meta);
+            TryDelete(data);
+        }
+    }
+
+    private static void TryDelete(string dir)
+    {
+        try
+        {
+            if (Directory.Exists(dir) && !Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories).Any()) Directory.Delete(dir, true);
+        }
+        catch (IOException)
+        {
+        }
+    }
+
+    private static string? StripLongPrefix(string? p) =>
+        p is null ? null : p.StartsWith(@"\\?\UNC\", StringComparison.Ordinal) ? @"\\" + p[8..]
+            : p.StartsWith(@"\\?\", StringComparison.Ordinal) ? p[4..] : p;
+
+    /// <summary>Asks rclone to unmount and exit now (no waiting for uploads; they stay in the cache).</summary>
+    private void QuitProcess()
+    {
+        try
+        {
+            RcAsync("core/quit", CancellationToken.None).GetAwaiter().GetResult();
+        }
+        catch (Exception)
+        {
+        }
+        if (_process is { } p && !p.WaitForExit(20_000)) Kill();
+        _process?.Dispose();
+        _process = null;
+        for (var i = 0; i < 40 && Directory.Exists(Root); i++) Thread.Sleep(250);
+    }
+
+    private async Task StartProcessAsync(CancellationToken ct)
+    {
         if (!File.Exists(_opt.RcloneExe)) throw new FileNotFoundException("rclone.exe was not found. Reinstall XCloudSSD.", _opt.RcloneExe);
         Directory.CreateDirectory(_opt.CacheDir);
         Directory.CreateDirectory(Path.GetDirectoryName(_opt.LogFile)!);
@@ -196,7 +309,6 @@ public sealed class RcloneMount : IDisposable
             Kill();
             throw new TimeoutException($"rclone did not mount {_opt.DriveLetter}: within 60 seconds. {LastErrorLines(_opt.LogFile)}".Trim());
         }
-        _poll = new Timer(_ => _ = PollAsync(), null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2));
     }
 
     private static void RotateLog(string file)
@@ -345,18 +457,8 @@ public sealed class RcloneMount : IDisposable
                 if (waiting == 0 || DateTime.UtcNow >= deadline) break;
                 Thread.Sleep(500);
             }
-            try
-            {
-                RcAsync("core/quit", CancellationToken.None).GetAwaiter().GetResult();
-            }
-            catch (Exception)
-            {
-                // fall through to kill
-            }
-            if (_process is { } p && !p.WaitForExit(20_000)) Kill();
+            QuitProcess();
         }
-        _process?.Dispose();
-        _process = null;
         if (waiting > 0) _log.LogWarning("{Letter}: unmounted with {Count} file(s) still waiting in the cache; they upload on the next mount.", _opt.DriveLetter, waiting);
         return waiting;
     }

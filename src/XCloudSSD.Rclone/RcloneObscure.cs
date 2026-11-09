@@ -17,10 +17,14 @@ public static class RcloneObscure
         0xf4, 0xde, 0x16, 0x2b, 0x8b, 0x95, 0xf6, 0x38,
     ];
 
-    public static string Obscure(string plain)
+    /// <param name="deterministic">
+    /// Same input → same output (IV derived from the value). rclone names its VFS cache folder after a hash of the
+    /// remote's settings, so a value that changes on every start would orphan files waiting in the cache.
+    /// </param>
+    public static string Obscure(string plain, bool deterministic = false)
     {
         var data = System.Text.Encoding.UTF8.GetBytes(plain);
-        var iv = RandomNumberGenerator.GetBytes(16);
+        var iv = deterministic ? SHA256.HashData(data).AsSpan(0, 16).ToArray() : RandomNumberGenerator.GetBytes(16);
         var output = new byte[16 + data.Length];
         iv.CopyTo(output, 0);
         Ctr(iv, data, output.AsSpan(16));
