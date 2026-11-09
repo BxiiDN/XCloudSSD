@@ -42,6 +42,7 @@ public sealed class RcloneMountTests(ITestOutputHelper output) : IDisposable
             LogFile = Path.Combine(_work, "rclone.log"),
             WriteBackSeconds = writeBack,
             DirCacheSeconds = 2,
+            ExtraArgs = ["--log-level", "DEBUG"],
         }, NullLogger.Instance, transfers, "t-test");
         mount.StartAsync(CancellationToken.None).GetAwaiter().GetResult();
         return (mount, dav, transfers);
@@ -62,7 +63,7 @@ public sealed class RcloneMountTests(ITestOutputHelper output) : IDisposable
     [Fact]
     public void ObscuredPassword_IsAcceptedByRclone()
     {
-        var psi = new ProcessStartInfo(RcloneExe) { RedirectStandardOutput = true, UseShellExecute = false };
+        var psi = new ProcessStartInfo(RcloneExe) { RedirectStandardOutput = true, UseShellExecute = false, StandardOutputEncoding = System.Text.Encoding.UTF8 };
         psi.ArgumentList.Add("reveal");
         psi.ArgumentList.Add(RcloneObscure.Obscure("s3cret-Ünï"));
         using var p = Process.Start(psi)!;
@@ -176,8 +177,10 @@ public sealed class RcloneMountTests(ITestOutputHelper output) : IDisposable
     {
         try
         {
-            if (File.Exists(Path.Combine(_work, "rclone.log")))
-                output.WriteLine(string.Join('\n', File.ReadLines(Path.Combine(_work, "rclone.log")).TakeLast(40)));
+            foreach (var log in new[] { "rclone.log.1", "rclone.log" })
+                if (File.Exists(Path.Combine(_work, log)))
+                    output.WriteLine($"--- {log}\n" + string.Join('\n', File.ReadLines(Path.Combine(_work, log))
+                        .Where(l => l.Contains("vfs cache") || l.Contains("ERROR") || l.Contains("pending") || l.Contains("Exit") || l.Contains("NOTICE")).TakeLast(60)));
             Directory.Delete(_work, true);
         }
         catch (Exception)

@@ -127,7 +127,8 @@ public sealed class RcloneMount : IDisposable
             "--log-file", o.LogFile,
             "--log-level", "INFO",
         };
-        if (o.ReportNtfs) args.Add("--fuse-flag=--FileSystemName=NTFS");
+        // WinFsp prefixes FileSystemName with "FUSE-"; ExactFileSystemName reports plain "NTFS" (Steam/launcher checks).
+        if (o.ReportNtfs) args.Add("--fuse-flag=--ExactFileSystemName=NTFS");
         if (o.UploadLimitKBps > 0 || o.DownloadLimitKBps > 0)
         {
             string L(int k) => k > 0 ? $"{k}k" : "off";

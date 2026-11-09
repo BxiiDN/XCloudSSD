@@ -137,7 +137,7 @@ public class RcloneBridgeTests
         Assert.Equal("NUL", args[args.IndexOf("--config") + 1]);
         Assert.Equal("full", args[args.IndexOf("--vfs-cache-mode") + 1]);
         Assert.Equal(@"C:\ProgramData\XCloudSSD\Cache\g-1", args[args.IndexOf("--cache-dir") + 1]);
-        Assert.Contains("--fuse-flag=--FileSystemName=NTFS", args);
+        Assert.Contains("--fuse-flag=--ExactFileSystemName=NTFS", args);
         Assert.DoesNotContain(args, a => a.Contains("SECRET") || a.Contains("RT"));
 
         var env = RcloneMount.BuildEnvironment(new RcloneRemote("drive", new Dictionary<string, string> { ["client_secret"] = "SECRET" }));
