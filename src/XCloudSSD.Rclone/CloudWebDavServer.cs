@@ -433,7 +433,8 @@ public sealed class CloudWebDavServer : IDisposable
         if (existing is { IsFolder: true }) throw new DavException(405, "A folder with this name exists.");
         var name = segs[^1];
         var modified = DateTimeOffset.UtcNow;
-        var target = existing is not null ? UploadTarget.Replace(existing.Id, null, modified) : UploadTarget.NewFile(parent.Id, name, null, modified);
+        var target = (existing is not null ? UploadTarget.Replace(existing.Id, null, modified) : UploadTarget.NewFile(parent.Id, name, null, modified))
+            with { SizeHint = req.ContentLength64 >= 0 ? req.ContentLength64 : null };
 
         var input = req.InputStream;
         var first = new byte[1];

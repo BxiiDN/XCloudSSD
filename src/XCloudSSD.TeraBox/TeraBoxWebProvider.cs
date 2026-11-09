@@ -474,7 +474,8 @@ public sealed class TeraBoxWebProvider : ICloudProvider, IRootOverride
             parentId = target.ParentId!;
             name = target.Name!;
         }
-        return Task.FromResult<IUploadSession>(new TeraBoxUploadSession(this, parentId, name, overwrite: target.ExistingFileId is not null));
+        return Task.FromResult<IUploadSession>(new TeraBoxUploadSession(this, parentId, name, overwrite: target.ExistingFileId is not null,
+            chunkSize: ChunkSizeFor(target.SizeHint)));
     }
 
     /// <summary>
@@ -550,15 +551,32 @@ public sealed class TeraBoxWebProvider : ICloudProvider, IRootOverride
         }
     }
 
-    internal async Task<string> PrecreateAsync(string path, string dir, string firstBlockMd5, CancellationToken ct)
+    /// <summary>Part size like the TeraBox web client / AList: 4 MiB up to 4 GiB, doubled for every doubling above.</summary>
+    internal static int ChunkSizeFor(long? size)
+    {
+        long chunk = BlockSize, threshold = 4L << 30;
+        while (size is { } s && s > threshold && chunk < (256 << 20))
+        {
+            chunk <<= 1;
+            threshold <<= 1;
+        }
+        return (int)chunk;
+    }
+
+    // Placeholder block list the TeraBox web client sends to precreate a multi-part upload (as in AList). With a single
+    // entry TeraBox prepares a one-part upload and /api/create later fails with errno 2 "param err".
+    private const string MultiPartPrecreateBlocks = "[\"5910a591dd8fc18c32a8f3df4fdc1761\",\"a5fc157d78e6ad1c7e114b056c92821e\"]";
+
+    internal async Task<string> PrecreateAsync(string path, string dir, string firstBlockMd5, bool multiPart, CancellationToken ct)
     {
         var json = await ApiAsync(HttpMethod.Post, "/api/precreate", new(), new()
         {
             ["path"] = path,
             ["autoinit"] = "1",
             ["target_path"] = dir,
-            ["block_list"] = new JsonArray(JsonValue.Create(firstBlockMd5)).ToJsonString(),
+            ["block_list"] = multiPart ? MultiPartPrecreateBlocks : new JsonArray(JsonValue.Create(firstBlockMd5)).ToJsonString(),
             ["local_mtime"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture),
+            ["file_limit_switch_v34"] = "true",
         }, ct).ConfigureAwait(false);
         return json["uploadid"]?.GetValue<string>() ?? throw new CloudException(CloudErrorKind.Unknown, "TeraBox precreate returned no uploadid.");
     }
@@ -778,7 +796,8 @@ public sealed class TeraBoxWebProvider : ICloudProvider, IRootOverride
 /// Streams a file to TeraBox in 4 MiB parts: precreate when the first part is ready, superfile2 per part
 /// (in order), create with the list of part MD5s at the end. Only one part is held at a time.
 /// </summary>
-internal sealed class TeraBoxUploadSession(TeraBoxWebProvider owner, string parentId, string name, bool overwrite) : IUploadSession
+internal sealed class TeraBoxUploadSession(TeraBoxWebProvider owner, string parentId, string name, bool overwrite,
+    int chunkSize = TeraBoxWebProvider.BlockSize) : IUploadSession
 {
     private readonly List<string> _blocks = new();
     private string? _uploadId;
@@ -787,31 +806,33 @@ internal sealed class TeraBoxUploadSession(TeraBoxWebProvider owner, string pare
     private string? _dir;
 
     public long Committed => _committed;
-    public int Granularity => TeraBoxWebProvider.BlockSize;
+    public int Granularity => chunkSize;
 
     public async Task AppendAsync(ReadOnlyMemory<byte> data, CancellationToken ct)
     {
-        for (var off = 0; off < data.Length; off += TeraBoxWebProvider.BlockSize)
-            await SendBlockAsync(data.Slice(off, Math.Min(TeraBoxWebProvider.BlockSize, data.Length - off)), ct).ConfigureAwait(false);
+        // Non-final data: more parts always follow.
+        for (var off = 0; off < data.Length; off += chunkSize)
+            await SendBlockAsync(data.Slice(off, Math.Min(chunkSize, data.Length - off)), multiPart: true, ct).ConfigureAwait(false);
     }
 
     public async Task<CloudItem> CompleteAsync(ReadOnlyMemory<byte> finalData, long totalSize, CancellationToken ct)
     {
-        for (var off = 0; off < finalData.Length; off += TeraBoxWebProvider.BlockSize)
-            await SendBlockAsync(finalData.Slice(off, Math.Min(TeraBoxWebProvider.BlockSize, finalData.Length - off)), ct).ConfigureAwait(false);
-        if (_blocks.Count == 0) await SendBlockAsync(ReadOnlyMemory<byte>.Empty, ct).ConfigureAwait(false);
+        var multiPart = totalSize > chunkSize;
+        for (var off = 0; off < finalData.Length; off += chunkSize)
+            await SendBlockAsync(finalData.Slice(off, Math.Min(chunkSize, finalData.Length - off)), multiPart, ct).ConfigureAwait(false);
+        if (_blocks.Count == 0) await SendBlockAsync(ReadOnlyMemory<byte>.Empty, false, ct).ConfigureAwait(false);
         if (_committed != totalSize) throw new CloudException(CloudErrorKind.IntegrityMismatch, $"TeraBox upload size mismatch: sent {_committed}, expected {totalSize}.");
         return await owner.CreateFileAsync(parentId, name, _path!, _dir!, totalSize, _uploadId!, _blocks, overwrite, ct).ConfigureAwait(false);
     }
 
-    private async Task SendBlockAsync(ReadOnlyMemory<byte> block, CancellationToken ct)
+    private async Task SendBlockAsync(ReadOnlyMemory<byte> block, bool multiPart, CancellationToken ct)
     {
         var md5 = Convert.ToHexStringLower(MD5.HashData(block.Span));
         if (_uploadId is null)
         {
             _path = owner.PathForNew(parentId, name);
             _dir = owner.DirOf(parentId);
-            _uploadId = await owner.PrecreateAsync(_path, _dir, md5, ct).ConfigureAwait(false);
+            _uploadId = await owner.PrecreateAsync(_path, _dir, md5, multiPart, ct).ConfigureAwait(false);
         }
         await owner.UploadPartAsync(_path!, _uploadId, _blocks.Count, block, ct).ConfigureAwait(false);
         _blocks.Add(md5);

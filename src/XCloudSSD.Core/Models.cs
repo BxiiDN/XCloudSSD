@@ -82,6 +82,9 @@ public sealed class MetadataUpdate
 
 public sealed record UploadTarget(string? ExistingFileId, string? ParentId, string? Name, uint? WindowsAttributes, DateTimeOffset? Modified)
 {
+    /// <summary>Total size when known up front (lets providers pick a part size / upload mode).</summary>
+    public long? SizeHint { get; init; }
+
     public static UploadTarget NewFile(string parentId, string name, uint? attrs = null, DateTimeOffset? modified = null)
         => new(null, parentId, name, attrs, modified);
 

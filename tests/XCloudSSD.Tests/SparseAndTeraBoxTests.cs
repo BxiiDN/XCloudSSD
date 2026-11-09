@@ -145,6 +145,36 @@ public class TeraBoxProtocolTests
     }
 
     [Theory]
+    [InlineData(10L, 4 << 20)]
+    [InlineData(4L << 30, 4 << 20)]
+    [InlineData((4L << 30) + 1, 8 << 20)]
+    [InlineData(20L << 30, 32 << 20)]
+    public void PartSize_GrowsForFilesAbove4GiB(long size, int part)
+    {
+        Assert.Equal(part, TeraBoxWebProvider.ChunkSizeFor(size));
+    }
+
+    [Fact]
+    public async Task SinglePartFile_IsPrecreatedWithItsOwnMd5()
+    {
+        var h = new Scripted();
+        h.Respond = (req, body) => req.RequestUri!.AbsolutePath switch
+        {
+            "/rest/2.0/pcs/file" => Json("""{"host":"c-jp.terabox.com"}"""),
+            "/api/precreate" => Json("""{"errno":0,"uploadid":"U","return_type":1}"""),
+            "/rest/2.0/pcs/superfile2" => Json("""{"md5":"x"}"""),
+            "/api/list" => Json("""{"errno":0,"list":[{"fs_id":5,"server_filename":"s.txt","isdir":0,"size":3,"server_mtime":1700000000}]}"""),
+            _ => Json("""{"errno":0}"""),
+        };
+        var p = new TeraBoxWebProvider("ndus=abc", new Metrics(), h, jsToken: "T");
+        await p.InitializeAsync(default);
+        var up = await p.BeginUploadAsync(UploadTarget.NewFile(p.RootId, "s.txt") with { SizeHint = 3 }, default);
+        await up.CompleteAsync(new byte[] { 1, 2, 3 }, 3, default);
+        var pre = Uri.UnescapeDataString(h.Requests.Single(r => r.Req.RequestUri!.AbsolutePath == "/api/precreate").Body);
+        Assert.Contains("block_list=[\"5289df737df57326fcdd22597afb1fac\"]", pre); // md5 of 01 02 03
+    }
+
+    [Theory]
     [InlineData("https://www.terabox.com", "jp", "terabox.com")]
     [InlineData("https://dm.terabox.com", "dm", "terabox.com")]
     [InlineData("https://www.1024tera.com", "jp", "1024tera.com")]
@@ -235,6 +265,9 @@ public class TeraBoxProtocolTests
         Assert.Contains("uploadid=UP1", pq);
         Assert.Contains("partseq=0", pq);
         Assert.Contains("path=/f.bin", pq);
+        // A multi-part file must be precreated as multi-part (two block entries), or /api/create answers errno 2.
+        var pre = Uri.UnescapeDataString(h.Requests.Single(r => r.Req.RequestUri!.AbsolutePath == "/api/precreate").Body.Replace('+', ' '));
+        Assert.Contains("block_list=[\"5910a591dd8fc18c32a8f3df4fdc1761\",\"a5fc157d78e6ad1c7e114b056c92821e\"]", pre);
         var create = h.Requests.Single(r => r.Req.RequestUri!.AbsolutePath == "/api/create");
         var form = Uri.UnescapeDataString(create.Body.Replace('+', ' '));
         Assert.Contains("size=5242880", form);
