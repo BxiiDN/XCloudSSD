@@ -124,7 +124,9 @@ public sealed class RcloneMountTests(ITestOutputHelper output) : IDisposable
             var sw2 = Stopwatch.StartNew();
             while (cloud.ContentAt("/SteamLibrary/steamapps/common/Game/config.ini") is not null && sw2.Elapsed < TimeSpan.FromSeconds(30)) Thread.Sleep(200);
             Assert.Null(cloud.ContentAt("/SteamLibrary/steamapps/common/Game/config.ini"));
-            Assert.True(mount.Status?.CacheBytes > 0, "the local cache should hold the written file");
+            // The written file stays in the local cache (on the PC's disk) for fast re-reads.
+            var cached = Directory.EnumerateFiles(Path.Combine(_work, "cache", "vfs"), "data.cpk", SearchOption.AllDirectories).Single();
+            Assert.Equal(data.Length, new FileInfo(cached).Length);
         }
         finally
         {
