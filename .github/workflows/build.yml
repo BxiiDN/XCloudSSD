@@ -47,11 +47,11 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-          RCLONE_VERSION: v1.75.2
+          XCS_RCLONE_TAG: v1.75.2
         run: |
-          $zip = "rclone-$env:RCLONE_VERSION-windows-amd64.zip"
+          $zip = "rclone-$env:XCS_RCLONE_TAG-windows-amd64.zip"
           New-Item -ItemType Directory -Force deps\rclone-dl | Out-Null
-          gh release download $env:RCLONE_VERSION --repo rclone/rclone --pattern $zip --pattern SHA256SUMS --dir deps\rclone-dl
+          gh release download $env:XCS_RCLONE_TAG --repo rclone/rclone --pattern $zip --pattern SHA256SUMS --dir deps\rclone-dl
           if ($LASTEXITCODE -ne 0) { throw "rclone download failed" }
           $expected = (Select-String -Path deps\rclone-dl\SHA256SUMS -Pattern ([regex]::Escape($zip))).Line.Split(' ')[0]
           $actual = (Get-FileHash "deps\rclone-dl\$zip" -Algorithm SHA256).Hash.ToLower()

@@ -162,10 +162,10 @@ public sealed class RcloneMount : IDisposable
             RedirectStandardOutput = true,
         };
         foreach (var a in BuildArguments()) psi.ArgumentList.Add(a);
+        // rclone reads any RCLONE_* variable as a flag/config: start from a clean slate, then add only ours.
+        foreach (var key in psi.Environment.Keys.Where(k => k.StartsWith("RCLONE_", StringComparison.OrdinalIgnoreCase)).ToList())
+            psi.Environment.Remove(key);
         foreach (var (k, v) in BuildEnvironment(_opt.Remote)) psi.Environment[k] = v;
-        // Never pick up a user/global rclone.conf or proxy settings that could redirect traffic.
-        psi.Environment.Remove("RCLONE_CONFIG");
-        psi.Environment.Remove("RCLONE_CONFIG_PASS");
 
         var stderr = new StringBuilder();
         var p = new Process { StartInfo = psi, EnableRaisingEvents = true };
