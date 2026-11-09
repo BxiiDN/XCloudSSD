@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Security.Cryptography;
 using Microsoft.Extensions.Logging.Abstractions;
 using XCloudSSD.Core;
+using XCloudSSD.Core.Ipc;
 using XCloudSSD.Rclone;
 using XCloudSSD.TestSupport;
 using XCloudSSD.Transfer;

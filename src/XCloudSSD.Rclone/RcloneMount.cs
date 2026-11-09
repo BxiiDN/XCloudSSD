@@ -9,6 +9,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.Extensions.Logging;
 using XCloudSSD.Core;
+using XCloudSSD.Core.Ipc;
 using XCloudSSD.Transfer;
 
 namespace XCloudSSD.Rclone;
