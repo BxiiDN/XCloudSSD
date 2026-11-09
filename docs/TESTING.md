@@ -1,5 +1,7 @@
 # Hasil pengujian
 
+## v1.3.0 — rclone + cache lokal (hasil CI diisi setelah run selesai)
+
 ## Pembaruan v1.2.1 — upload TeraBox "31045 user not exists"
 * Server upload TeraBox dipilih sesuai domain & region akun (mis. `jp-data.1024tera.com` untuk akun di
   www.1024tera.com), lalu dicoba server lain bila menjawab 31045. Diuji terhadap server terskrip, **bukan akun asli**.

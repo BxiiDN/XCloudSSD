@@ -6,6 +6,7 @@ XCloudSSD is released under the MIT License (see `LICENSE`). It uses or redistri
 |---|---|---|
 | **WinFsp** — Windows File System Proxy (Bill Zissimopoulos) | Kernel filesystem driver + user-mode API that makes the virtual disks real Windows volumes. The installer and the portable zip ship the unmodified official `winfsp-*.msi`. | GPLv3 with the WinFsp FLOSS exception (allows use by free/open-source software under licenses such as MIT). See https://github.com/winfsp/winfsp/blob/master/License.txt |
 | **winfsp.net** (NuGet, `winfsp-msil.dll`) | .NET binding to the WinFsp API | Same as WinFsp |
+| **rclone** v1.75.2 (Nick Craig-Wood and contributors) | Mount engine: `rclone mount` with the VFS file cache. The unmodified official `rclone.exe` (windows-amd64, SHA-256 checked against the release's SHA256SUMS during the build) is shipped in the `rclone` folder. https://rclone.org | MIT — https://github.com/rclone/rclone/blob/master/COPYING |
 | **.NET 10 runtime** (Microsoft) | Self-contained runtime inside `XCloudSSD.exe` and `XCloudSSDService.exe` | MIT |
 | **WPF / Windows Forms** (Microsoft) | Desktop UI, tray icon | MIT |
 | **Microsoft Edge WebView2 SDK** | In-app TeraBox sign-in page | Microsoft WebView2 SDK license (BSD-style) |

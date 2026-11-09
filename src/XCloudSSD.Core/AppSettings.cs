@@ -1,5 +1,13 @@
 namespace XCloudSSD.Core;
 
+public enum MountEngine
+{
+    /// <summary>rclone mount with --vfs-cache-mode full (cache on a local disk).</summary>
+    Rclone = 0,
+    /// <summary>XCloudSSD's own WinFsp filesystem: RAM buffer only, no disk cache.</summary>
+    Direct = 1,
+}
+
 public enum DeleteMode
 {
     /// <summary>Move to the provider's trash (recoverable; still counts toward quota).</summary>
@@ -41,7 +49,33 @@ public sealed class AppSettings
             if (RamBufferMB == 512) RamBufferMB = RecommendedRamBufferMB();
             SettingsVersion = 2;
         }
+        if (SettingsVersion < 3)
+        {
+            // v1.3: drives are mounted by rclone with a local cache (user decision).
+            Engine = MountEngine.Rclone;
+            SettingsVersion = 3;
+        }
     }
+
+    /// <summary>What mounts the drives: rclone with a local VFS cache (default) or XCloudSSD's own RAM-only filesystem.</summary>
+    public MountEngine Engine { get; set; } = MountEngine.Rclone;
+    /// <summary>Folder for rclone's file cache. Empty = %ProgramData%\XCloudSSD\Cache (on C:).</summary>
+    public string CacheDirectory { get; set; } = "";
+    /// <summary>Soft limit of the cache per drive; files still waiting for upload are never evicted.</summary>
+    public int CacheMaxGB { get; set; } = 100;
+    /// <summary>rclone evicts cached (already uploaded) files to keep at least this much free on the cache disk.</summary>
+    public int CacheMinFreeGB { get; set; } = 10;
+    /// <summary>Uploaded files stay cached this long after their last use.</summary>
+    public int CacheMaxAgeHours { get; set; } = 168;
+    /// <summary>Seconds after a file is closed before its upload starts.</summary>
+    public int WriteBackSeconds { get; set; } = 5;
+    /// <summary>Parallel uploads per drive.</summary>
+    public int RcloneTransfers { get; set; } = 4;
+
+    public static string DefaultCacheDirectory =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "XCloudSSD", "Cache");
+
+    public string EffectiveCacheDirectory => string.IsNullOrWhiteSpace(CacheDirectory) ? DefaultCacheDirectory : CacheDirectory.Trim();
     /// <summary>Range size fetched per cloud read request.</summary>
     public int ReadChunkKB { get; set; } = 4096;
     /// <summary>Chunks prefetched ahead when sequential access is detected.</summary>

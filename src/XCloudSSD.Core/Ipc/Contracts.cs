@@ -60,6 +60,11 @@ public sealed class AccountDto
     public string CapabilityNotes { get; set; } = "";
     public int ActiveTransfers { get; set; }
     public int OpenHandles { get; set; }
+    /// <summary>"Rclone" or "Direct" while mounted.</summary>
+    public string Engine { get; set; } = "";
+    public string CacheDirectory { get; set; } = "";
+    public long CacheBytes { get; set; }
+    public bool CacheOutOfSpace { get; set; }
 }
 
 public sealed class PerfDto
@@ -87,6 +92,9 @@ public sealed class ServiceStatusDto
     public bool InternetAvailable { get; set; }
     public bool WinFspInstalled { get; set; }
     public string? WinFspVersion { get; set; }
+    /// <summary>Version of the bundled rclone.exe, or null when it is missing.</summary>
+    public string? RcloneVersion { get; set; }
+    public string Engine { get; set; } = "";
     public bool OAuthClientConfigured { get; set; }
     public List<AccountDto> Accounts { get; set; } = new();
     public PerfDto Perf { get; set; } = new();

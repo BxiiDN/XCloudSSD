@@ -6,6 +6,7 @@ using XCloudSSD.Cloud;
 using XCloudSSD.Core;
 using XCloudSSD.Filesystem;
 using XCloudSSD.Metadata;
+using XCloudSSD.Rclone;
 using XCloudSSD.Transfer;
 
 namespace XCloudSSD.VirtualDrive;
@@ -28,6 +29,9 @@ public sealed class VirtualDisk : IDisposable
     private ChunkReadCache? _cache;
     private MetadataTree? _tree;
     private string? _changeToken;
+    private RcloneMount? _rclone;
+    private CloudWebDavServer? _bridge;
+    private volatile bool _stopping;
 
     public VirtualDisk(AccountRecord account, ICloudProvider provider, MemoryBudget budget, TransferTracker transfers,
         AppDatabase? db, ILogger log)
@@ -48,8 +52,17 @@ public sealed class VirtualDisk : IDisposable
     public string StateMessage { get; private set; } = "";
     public QuotaInfo? Quota { get; private set; }
     public DateTimeOffset? QuotaUpdated { get; private set; }
-    public bool Mounted => _host is not null;
+    public bool Mounted => _host is not null || _rclone is { IsRunning: true };
     public int OpenHandles => _fs?.OpenHandleCount ?? 0;
+
+    /// <summary>
+    /// rclone remote for providers rclone supports natively (Google Drive). Null = mount through the local
+    /// WebDAV bridge (TeraBox), which serves <see cref="Provider"/> to rclone's webdav backend.
+    /// </summary>
+    public Func<RcloneRemote>? NativeRcloneRemote { get; set; }
+    public MountEngine Engine { get; private set; }
+    public RcloneStatus? CacheStatus => _rclone?.Status;
+    public string? CacheDirectory { get; private set; }
     public MetadataTree? Tree => _tree;
     public AppSettings Settings { get; private set; } = new();
 
@@ -101,7 +114,9 @@ public sealed class VirtualDisk : IDisposable
         if (Provider is IRootOverride ro) ro.UseRootId(rootId);
         try
         {
-            Mount(settings);
+            _stopping = false;
+            if (settings.Engine == MountEngine.Rclone) await MountRcloneAsync(settings, ct).ConfigureAwait(false);
+            else Mount(settings);
         }
         catch (Exception ex)
         {
@@ -114,11 +129,75 @@ public sealed class VirtualDisk : IDisposable
         StartLoop();
     }
 
+    private async Task MountRcloneAsync(AppSettings settings, CancellationToken ct)
+    {
+        if (_rclone is { IsRunning: true }) return;
+        RcloneRemote remote;
+        CloudWebDavServer? bridge = null;
+        if (NativeRcloneRemote is { } native)
+        {
+            remote = native();
+        }
+        else
+        {
+            bridge = new CloudWebDavServer(Provider, _log, settings.DeleteMode == DeleteMode.Permanent);
+            bridge.Start();
+            remote = new RcloneRemote("webdav", new Dictionary<string, string>
+            {
+                ["url"] = bridge.Url,
+                ["vendor"] = "other",
+                ["user"] = bridge.User,
+                ["pass"] = RcloneObscure.Obscure(bridge.Password),
+            });
+        }
+        var cacheDir = Path.Combine(settings.EffectiveCacheDirectory, Account.Id);
+        var mount = new RcloneMount(new RcloneMountOptions
+        {
+            RcloneExe = AppPaths.RcloneExe,
+            Remote = remote,
+            DriveLetter = Account.DriveLetter,
+            VolumeLabel = Account.Label,
+            CacheDir = cacheDir,
+            LogFile = Path.Combine(AppPaths.LogsDir, $"rclone-{char.ToUpperInvariant(Account.DriveLetter)}.log"),
+            CacheMaxGB = settings.CacheMaxGB,
+            CacheMinFreeGB = settings.CacheMinFreeGB,
+            CacheMaxAgeHours = settings.CacheMaxAgeHours,
+            WriteBackSeconds = settings.WriteBackSeconds,
+            Transfers = settings.RcloneTransfers,
+            DirCacheSeconds = Provider.Capabilities.ChangeFeed ? 300 : 30,
+            PollSeconds = Provider.Capabilities.ChangeFeed ? Math.Max(10, settings.ChangePollSeconds) : 0,
+            ReportNtfs = settings.ReportNtfs,
+            UploadLimitKBps = settings.UploadLimitKBps,
+            DownloadLimitKBps = settings.DownloadLimitKBps,
+        }, _log, _transfers, Account.Id);
+        try
+        {
+            await mount.StartAsync(ct).ConfigureAwait(false);
+        }
+        catch
+        {
+            mount.Dispose();
+            bridge?.Dispose();
+            throw;
+        }
+        lock (_lock)
+        {
+            _rclone = mount;
+            _bridge = bridge;
+            Engine = MountEngine.Rclone;
+            CacheDirectory = cacheDir;
+        }
+        _log.LogInformation("Mounted {Letter}: with rclone ({Kind}), cache {Cache}", Account.DriveLetter,
+            bridge is null ? remote.Type : "webdav bridge", cacheDir);
+    }
+
     private void Mount(AppSettings settings)
     {
         lock (_lock)
         {
             if (_host is not null) return;
+            Engine = MountEngine.Direct;
+            CacheDirectory = null;
             _tree = new MetadataTree(Provider, TimeSpan.FromSeconds(Math.Max(5, settings.MetadataCacheSeconds)));
             _cache = new ChunkReadCache(Provider, _budget, settings.ReadChunkKB * 1024, settings.ReadAheadChunks,
                 settings.MaxParallelRequestsPerDisk, TimeSpan.FromSeconds(60));
@@ -187,9 +266,24 @@ public sealed class VirtualDisk : IDisposable
     /// <summary>Commits pending writes (up to the timeout) and unmounts.</summary>
     public List<string> Stop(TimeSpan flushTimeout)
     {
+        _stopping = true;
         _loopCts?.Cancel();
         _loopCts = null;
         List<string> unsaved = new();
+        RcloneMount? rclone;
+        CloudWebDavServer? bridge;
+        lock (_lock)
+        {
+            (rclone, bridge, _rclone, _bridge) = (_rclone, _bridge, null, null);
+        }
+        if (rclone is not null)
+        {
+            var waiting = rclone.Stop(flushTimeout);
+            rclone.Dispose();
+            // Files still waiting stay in the cache folder and are uploaded on the next mount.
+            if (waiting > 0) _log.LogWarning("{Letter}: {Count} file(s) wait in the cache for upload.", Account.DriveLetter, waiting);
+        }
+        bridge?.Dispose();
         lock (_lock)
         {
             if (_fs is not null) unsaved = _fs.FlushAll(flushTimeout);
@@ -207,7 +301,8 @@ public sealed class VirtualDisk : IDisposable
         return unsaved;
     }
 
-    public int PendingCommits => _fs?.PendingCommitCount ?? 0;
+    public int PendingCommits => _fs?.PendingCommitCount
+                                 ?? (_rclone?.Status is { } st ? st.UploadsInProgress + st.UploadsQueued : 0);
 
     // ------------------------------------------------------------------ background: quota, change feed, reconnect
 
@@ -226,6 +321,19 @@ public sealed class VirtualDisk : IDisposable
             try
             {
                 await Task.Delay(TimeSpan.FromSeconds(Math.Max(5, Settings.ChangePollSeconds)), ct).ConfigureAwait(false);
+                if (Engine == MountEngine.Rclone && !_stopping && _rclone is { IsRunning: false })
+                {
+                    // rclone exited unexpectedly: report it and mount again (cached uploads resume).
+                    SetState(ConnectionState.Error, "rclone stopped: " + (_rclone.Status?.LastError ?? "see logs\\rclone-" + Account.DriveLetter + ".log"));
+                    var old = _rclone;
+                    lock (_lock) _rclone = null;
+                    old.Dispose();
+                    _bridge?.Dispose();
+                    _bridge = null;
+                    await MountRcloneAsync(Settings, ct).ConfigureAwait(false);
+                    SetState(ConnectionState.Online, "rclone restarted");
+                    continue;
+                }
                 if (State is ConnectionState.Offline or ConnectionState.AuthRequired or ConnectionState.Error)
                 {
                     if (!Settings.AutoReconnect) continue;

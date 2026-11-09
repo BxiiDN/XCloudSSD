@@ -5,6 +5,7 @@ using XCloudSSD.Core;
 using XCloudSSD.Core.Ipc;
 using XCloudSSD.GoogleDrive;
 using XCloudSSD.Metadata;
+using XCloudSSD.Rclone;
 using XCloudSSD.Security;
 using XCloudSSD.TeraBox;
 using XCloudSSD.Transfer;
@@ -112,7 +113,44 @@ public sealed class DiskManager : IDisposable
             ProviderKind.GoogleDrive => CreateGoogleProvider(account.Id, out _),
             _ => CreateTeraBoxProvider(account.Id),
         };
-        return new VirtualDisk(account, provider, Budget, Transfers, _db, _logs.CreateLogger($"Disk-{account.DriveLetter}"));
+        return Attach(new VirtualDisk(account, provider, Budget, Transfers, _db, _logs.CreateLogger($"Disk-{account.DriveLetter}")));
+    }
+
+    /// <summary>Google Drive is mounted with rclone's own "drive" backend; TeraBox goes through the WebDAV bridge.</summary>
+    private VirtualDisk Attach(VirtualDisk disk)
+    {
+        if (disk.Account.Provider == ProviderKind.GoogleDrive)
+        {
+            var accountId = disk.Account.Id;
+            disk.NativeRcloneRemote = () => GoogleRcloneRemote(accountId);
+        }
+        return disk;
+    }
+
+    /// <summary>
+    /// rclone "drive" remote using the user's own OAuth client and this account's refresh token. Passed to rclone
+    /// only through its environment (in-memory config); rclone refreshes the access token itself.
+    /// </summary>
+    internal RcloneRemote GoogleRcloneRemote(string accountId)
+    {
+        var client = LoadOAuthClient() ?? throw new InvalidOperationException("Google OAuth client is not configured (Settings → Google OAuth client).");
+        var secret = _secrets.Load(accountId);
+        if (secret is null || !secret.TryGetValue("refresh_token", out var refresh) || string.IsNullOrEmpty(refresh))
+            throw new InvalidOperationException("Google sign-in data for this account is missing. Remove the account and add it again.");
+        var token = new System.Text.Json.Nodes.JsonObject
+        {
+            ["access_token"] = "",
+            ["token_type"] = "Bearer",
+            ["refresh_token"] = refresh,
+            ["expiry"] = "2000-01-01T00:00:00Z",
+        };
+        return new RcloneRemote("drive", new Dictionary<string, string>
+        {
+            ["client_id"] = client.Id,
+            ["client_secret"] = client.Secret,
+            ["scope"] = "drive",
+            ["token"] = token.ToJsonString(),
+        });
     }
 
     private ICloudProvider CreateGoogleProvider(string accountId, out GoogleAccessTokenSource? tokens)
@@ -223,7 +261,7 @@ public sealed class DiskManager : IDisposable
             };
             _secrets.Save(accountId, new Dictionary<string, string> { ["refresh_token"] = tokens.RefreshToken });
             _db.UpsertAccount(account);
-            var disk = new VirtualDisk(account, probe, Budget, Transfers, _db, _logs.CreateLogger($"Disk-{letter}"));
+            var disk = Attach(new VirtualDisk(account, probe, Budget, Transfers, _db, _logs.CreateLogger($"Disk-{letter}")));
             _disks[accountId] = disk;
             await disk.StartAsync(Settings, ct).ConfigureAwait(false);
             return ToDto(disk);
@@ -280,7 +318,7 @@ public sealed class DiskManager : IDisposable
             });
             PersistTeraBoxToken(accountId, provider);
             _db.UpsertAccount(account);
-            var disk = new VirtualDisk(account, provider, Budget, Transfers, _db, _logs.CreateLogger($"Disk-{letter}"));
+            var disk = Attach(new VirtualDisk(account, provider, Budget, Transfers, _db, _logs.CreateLogger($"Disk-{letter}")));
             _disks[accountId] = disk;
             await disk.StartAsync(Settings, ct).ConfigureAwait(false);
             return ToDto(disk);
@@ -422,11 +460,33 @@ public sealed class DiskManager : IDisposable
         s.UploadChunkMB = Math.Clamp(s.UploadChunkMB, 1, 256);
         s.ReadAheadChunks = Math.Clamp(s.ReadAheadChunks, 0, 64);
         s.MaxParallelRequestsPerDisk = Math.Clamp(s.MaxParallelRequestsPerDisk, 1, 64);
+        s.CacheMaxGB = Math.Clamp(s.CacheMaxGB, 1, 100_000);
+        s.CacheMinFreeGB = Math.Clamp(s.CacheMinFreeGB, 0, 10_000);
+        s.CacheMaxAgeHours = Math.Clamp(s.CacheMaxAgeHours, 1, 24 * 3650);
+        s.WriteBackSeconds = Math.Clamp(s.WriteBackSeconds, 0, 3600);
+        s.RcloneTransfers = Math.Clamp(s.RcloneTransfers, 1, 32);
+        s.CacheDirectory = (s.CacheDirectory ?? "").Trim();
+        if (s.CacheDirectory.Length > 0 && !Path.IsPathFullyQualified(s.CacheDirectory))
+            throw new InvalidOperationException("The cache folder must be a full path, e.g. C:\\XCloudSSDCache.");
+        var old = Settings;
+        var remount = old.Engine != s.Engine || old.EffectiveCacheDirectory != s.EffectiveCacheDirectory
+                      || old.CacheMaxGB != s.CacheMaxGB || old.CacheMinFreeGB != s.CacheMinFreeGB
+                      || old.CacheMaxAgeHours != s.CacheMaxAgeHours || old.WriteBackSeconds != s.WriteBackSeconds
+                      || old.RcloneTransfers != s.RcloneTransfers || old.ReportNtfs != s.ReportNtfs
+                      || (s.Engine == MountEngine.Rclone && (old.UploadLimitKBps != s.UploadLimitKBps || old.DownloadLimitKBps != s.DownloadLimitKBps));
         Settings = s;
         _db.SaveSettings(s);
         Budget.Resize((long)s.RamBufferMB << 20);
         ApplyThrottles();
         foreach (var d in _disks.Values) d.ApplySettings(s);
+        // Engine and rclone options are command-line flags: mounted drives are remounted to apply them.
+        if (remount)
+            foreach (var d in _disks.Values.Where(d => d.Mounted).ToList())
+                _ = Task.Run(async () =>
+                {
+                    d.Stop(TimeSpan.FromSeconds(120));
+                    await StartDiskWithRetryAsync(d, CancellationToken.None).ConfigureAwait(false);
+                });
     }
 
     private void ApplyThrottles()
@@ -446,6 +506,8 @@ public sealed class DiskManager : IDisposable
             InternetAvailable = System.Net.NetworkInformation.NetworkInterface.GetIsNetworkAvailable(),
             WinFspInstalled = installed,
             WinFspVersion = version,
+            RcloneVersion = RcloneInfo.Version(AppPaths.RcloneExe),
+            Engine = Settings.Engine.ToString(),
             OAuthClientConfigured = LoadOAuthClient() is not null,
             Accounts = _disks.Values.Select(ToDto).ToList(),
             Perf = _perf,
@@ -470,8 +532,12 @@ public sealed class DiskManager : IDisposable
         QuotaUpdated = d.QuotaUpdated,
         CanMount = d.Provider.Capabilities.CanMount,
         CapabilityNotes = d.Provider.Capabilities.Notes,
-        ActiveTransfers = Transfers.ActiveCountFor(d.Account.Id) + d.PendingCommits,
+        ActiveTransfers = d.Engine == MountEngine.Rclone ? d.PendingCommits : Transfers.ActiveCountFor(d.Account.Id) + d.PendingCommits,
         OpenHandles = d.OpenHandles,
+        Engine = d.Mounted ? d.Engine.ToString() : "",
+        CacheDirectory = d.CacheDirectory ?? "",
+        CacheBytes = d.CacheStatus?.CacheBytes ?? 0,
+        CacheOutOfSpace = d.CacheStatus?.OutOfSpace ?? false,
     };
 
     private void SamplePerf()

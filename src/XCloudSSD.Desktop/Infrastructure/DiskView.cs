@@ -20,11 +20,12 @@ public sealed class DiskView
     public string Subtitle => $"{Fmt.Provider(Dto.Provider)} · {(string.IsNullOrEmpty(Dto.Email) ? Dto.DisplayName : Dto.Email)}";
     public string Provider => Fmt.Provider(Dto.Provider);
     public string Email => Dto.Email;
-    public string StateText => Fmt.State(Dto.State) + (Dto.Mounted ? "" : " · " + L.T("NotMounted"));
+    public string StateText => Fmt.State(Dto.State) + (Dto.Mounted ? "" : " · " + L.T("NotMounted"))
+                               + (Dto.Engine == "Rclone" ? " · rclone · " + L.F("CacheUsage", Fmt.Bytes(Dto.CacheBytes)) : "");
     public string StateDetail => Dto.StateMessage;
     public bool IsEnabled => Dto.Enabled;
     public string ToggleText => Dto.Enabled ? L.T("Disconnect") : L.T("Reconnect");
-    public string Signature => $"{Dto.Id}|{Dto.Label}|{Dto.DriveLetter}|{Dto.State}|{Dto.Mounted}|{Dto.Enabled}|{Dto.UsedBytes}|{Dto.TotalBytes}|{Dto.StateMessage}|{Loc.Instance.Code}";
+    public string Signature => $"{Dto.Id}|{Dto.Label}|{Dto.DriveLetter}|{Dto.State}|{Dto.Mounted}|{Dto.Enabled}|{Dto.UsedBytes}|{Dto.TotalBytes}|{Dto.StateMessage}|{Dto.Engine}|{Dto.CacheBytes / (16 << 20)}|{Loc.Instance.Code}";
 
     public double UsedFraction => Dto.TotalBytes is > 0 ? (double)Dto.UsedBytes / Dto.TotalBytes.Value : 0;
 

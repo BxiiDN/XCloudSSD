@@ -12,5 +12,6 @@
     <ProjectReference Include="..\XCloudSSD.TeraBox\XCloudSSD.TeraBox.csproj" />
     <ProjectReference Include="..\XCloudSSD.Transfer\XCloudSSD.Transfer.csproj" />
     <ProjectReference Include="..\XCloudSSD.Filesystem\XCloudSSD.Filesystem.csproj" />
+    <ProjectReference Include="..\XCloudSSD.Rclone\XCloudSSD.Rclone.csproj" />
   </ItemGroup>
 </Project>

@@ -1,13 +1,15 @@
 # XCloudSSD
 
 **Cloud Virtual SSD untuk Windows 10/11 x64.** Setiap akun cloud dipasang sebagai drive lokal sendiri
-(`D:`, `E:`, …) yang muncul di *This PC → Devices and drives*. Isi file berada langsung di cloud; secara lokal
-hanya dipakai buffer RAM yang dibatasi — **tidak ada cache game/file di C: atau SSD fisik lain**.
+(`D:`, `E:`, …) yang muncul di *This PC → Devices and drives*. File yang ditulis masuk dulu ke cache
+lokal rclone (di C: secara default) lalu diunggah di latar belakang; file yang dibaca disimpan di cache untuk dipakai ulang.
 
-> Status: v1.2.1. Google Drive lewat API resmi. TeraBox **eksperimental**: login di dalam aplikasi pada halaman
-> resmi TeraBox, lalu memakai antarmuka web TeraBox (tidak resmi, belum diuji dengan akun sungguhan) — lihat
-> [docs/LIMITATIONS.md](docs/LIMITATIONS.md).
-> Hasil pengujian nyata ada di [docs/TESTING.md](docs/TESTING.md).
+> Status: v1.3.0. Drive dipasang oleh **rclone** (dibundel) dengan **cache lokal di disk** (default
+> `C:\ProgramData\XCloudSSD\Cache`, bisa diganti di Settings). Google Drive lewat backend `drive` resmi rclone.
+> **TeraBox didukung lewat rclone**: rclone resmi belum punya backend TeraBox, jadi XCloudSSD menjalankan jembatan
+> WebDAV lokal (127.0.0.1, password acak) yang meneruskan ke konektor TeraBox XCloudSSD (antarmuka web TeraBox,
+> tidak resmi — belum diuji dengan akun sungguhan). Mode lama "XCloudSSD direct" (hanya RAM) masih bisa dipilih.
+> Lihat [docs/LIMITATIONS.md](docs/LIMITATIONS.md) dan hasil uji di [docs/TESTING.md](docs/TESTING.md).
 
 ## Fitur
 

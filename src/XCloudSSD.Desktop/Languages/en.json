@@ -242,5 +242,21 @@
  "Continue": "Continue",
  "TeraBoxDisclosure": "TeraBox has no public API for apps. XCloudSSD opens TeraBox's own sign-in page inside the app and then uses the same web interface the TeraBox website uses (like the open-source AList tool). Your session is stored encrypted on this PC and only sent to terabox.com. TeraBox can change this interface at any time and may not allow automated access — use it with your own account at your own risk. This TeraBox support is new and has not been tested with a real account yet.",
  "TeraBoxAdded": "TeraBox account added as \"{0}\" on drive {1}:.",
- "WebView2Missing": "The Microsoft Edge WebView2 runtime is needed to show TeraBox's sign-in page inside XCloudSSD. Install it, then try again."
+ "WebView2Missing": "The Microsoft Edge WebView2 runtime is needed to show TeraBox's sign-in page inside XCloudSSD. Install it, then try again.",
+ "SecEngine": "Mount engine & local cache",
+ "OptEngine": "Mount drives with",
+ "EngineRclone": "rclone (local cache on disk — recommended for games)",
+ "EngineDirect": "XCloudSSD direct (RAM only, no disk cache)",
+ "OptCacheDir": "Cache folder",
+ "Browse": "Browse…",
+ "OpenFolder": "Open",
+ "OptCacheMax": "Max cache per drive (GB)",
+ "OptCacheMaxHint": "Soft limit. Files that are still waiting for upload are never removed from the cache.",
+ "OptCacheMinFree": "Keep free on cache disk (GB)",
+ "OptCacheAge": "Keep uploaded files cached (hours)",
+ "OptWriteBack": "Upload delay after close (s)",
+ "OptRcloneTransfers": "Parallel uploads per drive",
+ "RcloneInfo": "rclone {0} (bundled). Files are written to the cache first and uploaded in the background; Steam installs at disk speed. Changes here remount the drives.",
+ "RcloneMissing": "rclone.exe is missing — reinstall XCloudSSD.",
+ "CacheUsage": "Cache {0}"
 }

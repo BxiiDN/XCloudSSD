@@ -47,6 +47,7 @@ public partial class SettingsPage : UserControl, IPage
         NotifyBox.IsChecked = App.Prefs.Notifications;
         StartApp.IsChecked = DesktopSettings.StartWithWindows;
         DeleteModeBox.ItemsSource = new[] { L.T("DeleteTrash"), L.T("DeletePermanent") };
+        EngineBox.ItemsSource = new[] { L.T("EngineRclone"), L.T("EngineDirect") };
         _loading = false;
         try
         {
@@ -79,6 +80,27 @@ public partial class SettingsPage : UserControl, IPage
         NtfsBox.IsChecked = s.ReportNtfs;
         PollBox.Text = s.ChangePollSeconds.ToString();
         LogLevelBox.SelectedItem = s.LogLevel;
+        EngineBox.SelectedIndex = s.Engine == MountEngine.Direct ? 1 : 0;
+        CacheDirBox.Text = s.EffectiveCacheDirectory;
+        CacheMaxBox.Text = s.CacheMaxGB.ToString();
+        CacheMinFreeBox.Text = s.CacheMinFreeGB.ToString();
+        CacheAgeBox.Text = s.CacheMaxAgeHours.ToString();
+        WriteBackBox.Text = s.WriteBackSeconds.ToString();
+        RcloneTransfersBox.Text = s.RcloneTransfers.ToString();
+        var rclone = ServiceHub.Last?.RcloneVersion;
+        EngineInfo.Text = rclone is null ? L.T("RcloneMissing") : L.F("RcloneInfo", rclone);
+    }
+
+    private void BrowseCache_Click(object sender, RoutedEventArgs e)
+    {
+        var dlg = new Microsoft.Win32.OpenFolderDialog { Title = L.T("OptCacheDir"), InitialDirectory = CacheDirBox.Text };
+        if (dlg.ShowDialog(Owner) == true) CacheDirBox.Text = dlg.FolderName;
+    }
+
+    private void OpenCache_Click(object sender, RoutedEventArgs e)
+    {
+        var dir = CacheDirBox.Text.Trim();
+        if (Directory.Exists(dir)) Process.Start(new ProcessStartInfo("explorer.exe", dir) { UseShellExecute = true });
     }
 
     private static int Num(TextBox box, int fallback) => int.TryParse(box.Text.Trim(), out var v) ? v : fallback;
@@ -104,6 +126,14 @@ public partial class SettingsPage : UserControl, IPage
             s.ChangePollSeconds = Math.Max(5, Num(PollBox, s.ChangePollSeconds));
             s.LogLevel = LogLevelBox.SelectedItem as string ?? "Information";
             s.Notifications = NotifyBox.IsChecked == true;
+            s.Engine = EngineBox.SelectedIndex == 1 ? MountEngine.Direct : MountEngine.Rclone;
+            var cacheDir = CacheDirBox.Text.Trim();
+            s.CacheDirectory = string.Equals(cacheDir, AppSettings.DefaultCacheDirectory, StringComparison.OrdinalIgnoreCase) ? "" : cacheDir;
+            s.CacheMaxGB = Num(CacheMaxBox, s.CacheMaxGB);
+            s.CacheMinFreeGB = Num(CacheMinFreeBox, s.CacheMinFreeGB);
+            s.CacheMaxAgeHours = Num(CacheAgeBox, s.CacheMaxAgeHours);
+            s.WriteBackSeconds = Num(WriteBackBox, s.WriteBackSeconds);
+            s.RcloneTransfers = Num(RcloneTransfersBox, s.RcloneTransfers);
 
             _settings = await ServiceHub.Client.CallAsync<AppSettings>(Commands.SetSettings, s);
             if (_settings is not null) Fill(_settings);
@@ -127,6 +157,8 @@ public partial class SettingsPage : UserControl, IPage
         App.Prefs.Save();
         DeleteModeBox.ItemsSource = new[] { L.T("DeleteTrash"), L.T("DeletePermanent") };
         if (_settings is not null) DeleteModeBox.SelectedIndex = _settings.DeleteMode == DeleteMode.Permanent ? 1 : 0;
+        EngineBox.ItemsSource = new[] { L.T("EngineRclone"), L.T("EngineDirect") };
+        if (_settings is not null) EngineBox.SelectedIndex = _settings.Engine == MountEngine.Direct ? 1 : 0;
     }
 
     private void ThemeBox_SelectionChanged(object sender, SelectionChangedEventArgs e)

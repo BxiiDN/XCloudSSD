@@ -32,6 +32,12 @@ public static class AppPaths
     public static string UserLanguagesDir => Ensure(Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "XCloudSSD", "languages"));
 
+    /// <summary>rclone.exe shipped with XCloudSSD (folder "rclone" next to the service). XCS_RCLONE_EXE overrides it (tests).</summary>
+    public static string RcloneExe =>
+        Environment.GetEnvironmentVariable("XCS_RCLONE_EXE") is { Length: > 0 } custom
+            ? custom
+            : Path.Combine(AppContext.BaseDirectory, "rclone", "rclone.exe");
+
     private static string Ensure(string p)
     {
         Directory.CreateDirectory(p);

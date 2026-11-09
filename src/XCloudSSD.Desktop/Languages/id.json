@@ -242,5 +242,21 @@
  "Continue": "Lanjut",
  "TeraBoxDisclosure": "TeraBox tidak punya API publik untuk aplikasi. XCloudSSD membuka halaman login resmi TeraBox di dalam aplikasi, lalu memakai antarmuka web yang sama dengan situs TeraBox (seperti tool open-source AList). Sesi login disimpan terenkripsi di PC ini dan hanya dikirim ke terabox.com. TeraBox bisa mengubah antarmuka ini kapan saja dan mungkin tidak mengizinkan akses otomatis — gunakan dengan akunmu sendiri atas risiko sendiri. Dukungan TeraBox ini baru dan belum diuji dengan akun sungguhan.",
  "TeraBoxAdded": "Akun TeraBox ditambahkan sebagai \"{0}\" di drive {1}:.",
- "WebView2Missing": "Runtime Microsoft Edge WebView2 diperlukan untuk menampilkan halaman login TeraBox di XCloudSSD. Pasang dulu, lalu coba lagi."
+ "WebView2Missing": "Runtime Microsoft Edge WebView2 diperlukan untuk menampilkan halaman login TeraBox di XCloudSSD. Pasang dulu, lalu coba lagi.",
+ "SecEngine": "Mesin mount & cache lokal",
+ "OptEngine": "Pasang drive dengan",
+ "EngineRclone": "rclone (cache lokal di disk — disarankan untuk game)",
+ "EngineDirect": "XCloudSSD langsung (hanya RAM, tanpa cache disk)",
+ "OptCacheDir": "Folder cache",
+ "Browse": "Pilih…",
+ "OpenFolder": "Buka",
+ "OptCacheMax": "Maks. cache per drive (GB)",
+ "OptCacheMaxHint": "Batas lunak. File yang masih menunggu upload tidak pernah dihapus dari cache.",
+ "OptCacheMinFree": "Sisakan ruang kosong di disk cache (GB)",
+ "OptCacheAge": "Simpan file yang sudah terunggah di cache (jam)",
+ "OptWriteBack": "Jeda upload setelah file ditutup (detik)",
+ "OptRcloneTransfers": "Upload paralel per drive",
+ "RcloneInfo": "rclone {0} (bawaan). File ditulis ke cache dulu lalu diunggah di latar belakang; install Steam secepat disk. Perubahan di sini memasang ulang drive.",
+ "RcloneMissing": "rclone.exe tidak ditemukan — install ulang XCloudSSD.",
+ "CacheUsage": "Cache {0}"
 }

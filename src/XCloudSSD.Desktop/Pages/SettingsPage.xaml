@@ -74,6 +74,37 @@
                     </StackPanel>
                 </Border>
 
+                <!-- Engine & local cache (rclone) -->
+                <Border Style="{StaticResource Card}">
+                    <Grid>
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="220" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition />
+                        </Grid.RowDefinitions>
+                        <TextBlock Grid.ColumnSpan="3" Style="{StaticResource H2}" Text="{Binding [SecEngine], Source={x:Static i:Loc.Instance}}" />
+                        <TextBlock Grid.Row="1" Style="{StaticResource Label}" Text="{Binding [OptEngine], Source={x:Static i:Loc.Instance}}" />
+                        <ComboBox Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" x:Name="EngineBox" Width="420" HorizontalAlignment="Left" Margin="0,4" />
+                        <TextBlock Grid.Row="2" Style="{StaticResource Label}" Text="{Binding [OptCacheDir], Source={x:Static i:Loc.Instance}}" />
+                        <StackPanel Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="0,4">
+                            <TextBox x:Name="CacheDirBox" Width="320" />
+                            <Button Style="{DynamicResource ToolButton}" Margin="8,0,0,0" Click="BrowseCache_Click" Content="{Binding [Browse], Source={x:Static i:Loc.Instance}}" />
+                            <Button Style="{DynamicResource ToolButton}" Click="OpenCache_Click" Content="{Binding [OpenFolder], Source={x:Static i:Loc.Instance}}" />
+                        </StackPanel>
+                        <TextBlock Grid.Row="3" Style="{StaticResource Label}" Text="{Binding [OptCacheMax], Source={x:Static i:Loc.Instance}}" />
+                        <TextBox Grid.Row="3" Grid.Column="1" x:Name="CacheMaxBox" Width="160" HorizontalAlignment="Left" Margin="0,4" />
+                        <TextBlock Grid.Row="3" Grid.Column="2" Style="{StaticResource Dim}" Margin="12,0,0,0" VerticalAlignment="Center" TextWrapping="Wrap" Text="{Binding [OptCacheMaxHint], Source={x:Static i:Loc.Instance}}" />
+                        <TextBlock Grid.Row="4" Style="{StaticResource Label}" Text="{Binding [OptCacheMinFree], Source={x:Static i:Loc.Instance}}" />
+                        <TextBox Grid.Row="4" Grid.Column="1" x:Name="CacheMinFreeBox" Width="160" HorizontalAlignment="Left" Margin="0,4" />
+                        <TextBlock Grid.Row="5" Style="{StaticResource Label}" Text="{Binding [OptCacheAge], Source={x:Static i:Loc.Instance}}" />
+                        <TextBox Grid.Row="5" Grid.Column="1" x:Name="CacheAgeBox" Width="160" HorizontalAlignment="Left" Margin="0,4" />
+                        <TextBlock Grid.Row="6" Style="{StaticResource Label}" Text="{Binding [OptWriteBack], Source={x:Static i:Loc.Instance}}" />
+                        <TextBox Grid.Row="6" Grid.Column="1" x:Name="WriteBackBox" Width="160" HorizontalAlignment="Left" Margin="0,4" />
+                        <TextBlock Grid.Row="7" Style="{StaticResource Label}" Text="{Binding [OptRcloneTransfers], Source={x:Static i:Loc.Instance}}" />
+                        <TextBox Grid.Row="7" Grid.Column="1" x:Name="RcloneTransfersBox" Width="160" HorizontalAlignment="Left" Margin="0,4" />
+                        <TextBlock Grid.Row="8" Grid.ColumnSpan="3" x:Name="EngineInfo" Style="{StaticResource Dim}" FontSize="12" Margin="0,6,0,0" TextWrapping="Wrap" />
+                    </Grid>
+                </Border>
+
                 <!-- Transfer -->
                 <Border Style="{StaticResource Card}">
                     <Grid>

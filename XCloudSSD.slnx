@@ -9,6 +9,7 @@
     <Project Path="src/XCloudSSD.TeraBox/XCloudSSD.TeraBox.csproj" />
     <Project Path="src/XCloudSSD.Transfer/XCloudSSD.Transfer.csproj" />
     <Project Path="src/XCloudSSD.Filesystem/XCloudSSD.Filesystem.csproj" />
+    <Project Path="src/XCloudSSD.Rclone/XCloudSSD.Rclone.csproj" />
     <Project Path="src/XCloudSSD.VirtualDrive/XCloudSSD.VirtualDrive.csproj" />
     <Project Path="src/XCloudSSD.Service/XCloudSSD.Service.csproj" />
     <Project Path="src/XCloudSSD.Desktop/XCloudSSD.Desktop.csproj" />

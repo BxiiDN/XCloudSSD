@@ -15,6 +15,14 @@ if (args.Contains("--selftest-winfsp"))
     return ok ? 0 : 1;
 }
 
+if (args.Contains("--selftest-rclone"))
+{
+    var (ok, message) = XCloudSSD.Rclone.RcloneSelfCheck.Run(AppPaths.RcloneExe,
+        Path.Combine(Path.GetTempPath(), "xcloudssd-rclone-selftest-" + Environment.ProcessId));
+    Console.WriteLine(message);
+    return ok ? 0 : 1;
+}
+
 var builder = Host.CreateApplicationBuilder(args);
 builder.Services.AddWindowsService(o => o.ServiceName = AppPaths.ServiceName);
 builder.Services.Configure<HostOptions>(o => o.ShutdownTimeout = TimeSpan.FromSeconds(90));

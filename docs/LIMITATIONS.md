@@ -1,5 +1,23 @@
 # Keterbatasan yang diketahui (jujur)
 
+## Mesin rclone + cache lokal (default sejak v1.3.0)
+* Atas permintaan pengguna, drive sekarang dipasang oleh `rclone mount --vfs-cache-mode full`. Data file **disimpan
+  di disk lokal** (default `C:\ProgramData\XCloudSSD\Cache\<akun>`): file yang ditulis menunggu di sana sampai
+  terunggah, file yang dibaca disimpan untuk dipakai ulang. Aturan lama "tanpa cache disk" tidak berlaku lagi untuk
+  mesin ini; mode "XCloudSSD direct" (hanya RAM) tetap tersedia di Settings.
+* Ruang C: harus cukup untuk data yang sedang di-install/diunggah. File yang belum terunggah **tidak pernah dihapus**
+  dari cache meskipun melewati batas ukuran; rclone menjaga sisa ruang kosong (default 10 GB) dengan membuang file
+  yang sudah terunggah.
+* Install game sekarang secepat disk lokal; upload ke cloud berjalan di belakang dan bisa lama (lihat Transfer
+  Manager). Jika PC dimatikan sebelum selesai, upload dilanjutkan saat drive dipasang lagi.
+* Konfigurasi rclone tidak ditulis ke file: remote diberikan lewat environment proses (`--config NUL`). Token Google
+  dan cookie TeraBox tetap tersimpan terenkripsi DPAPI oleh XCloudSSD.
+* **TeraBox lewat rclone**: rclone resmi belum punya backend TeraBox (PR komunitas #8508 masih belum digabung dan
+  bermasalah). XCloudSSD menyediakan jembatan WebDAV lokal di 127.0.0.1 (password acak tiap start) yang memakai
+  konektor TeraBox XCloudSSD; rclone memasangnya dengan backend `webdav` resmi. Akun gratis TeraBox tetap membatasi
+  satu file maks. 4 GB — file game yang lebih besar akan gagal diunggah ke TeraBox (data tetap aman di cache).
+* Waktu modifikasi file tidak disimpan di TeraBox (yang tampil adalah waktu upload).
+
 ## TeraBox — eksperimental, lewat antarmuka web (tidak resmi)
 TeraBox tidak menyediakan API publik untuk aplikasi (Open Platform hanya untuk partner). Atas permintaan pengguna,
 XCloudSSD sekarang menambahkan akun TeraBox dengan cara ini:
