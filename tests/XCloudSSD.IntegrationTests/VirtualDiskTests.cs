@@ -260,6 +260,8 @@ public class VirtualDiskTests(ITestOutputHelper output)
         disk.Cloud.Offline = false;
         for (var i = 0; i < 100 && !disk.Cloud.Exists("work/written-offline.bin"); i++) Thread.Sleep(100);
         Assert.True(disk.Cloud.ContentAt("work/written-offline.bin")!.AsSpan().SequenceEqual(data));
+        // The cloud may report the file a moment before the commit bookkeeping finishes.
+        for (var i = 0; i < 50 && disk.Fs.PendingCommitCount != 0; i++) Thread.Sleep(100);
         Assert.Equal(0, disk.Fs.PendingCommitCount);
     }
 
