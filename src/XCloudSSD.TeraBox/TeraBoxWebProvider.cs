@@ -753,11 +753,16 @@ public sealed class TeraBoxWebProvider : ICloudProvider, IRootOverride
             9000 => CloudErrorKind.Forbidden,
             -9 or 31066 => CloudErrorKind.NotFound,
             -8 or 31061 => CloudErrorKind.AlreadyExists,
-            -10 or 31112 => CloudErrorKind.QuotaExceeded,
+            -10 or 31112 or 58 => CloudErrorKind.QuotaExceeded,
             31034 or 9013 => CloudErrorKind.RateLimited,
             _ => CloudErrorKind.Unknown,
         };
-        var hint = errno == 9000 ? " (TeraBox is not available in this region)" : kind == CloudErrorKind.Unauthorized ? " (sign in again)" : "";
+        var hint = errno switch
+        {
+            9000 => " (TeraBox is not available in this region)",
+            58 => " (file is larger than this TeraBox account allows per file — free accounts: 4 GB)",
+            _ => kind == CloudErrorKind.Unauthorized ? " (sign in again)" : "",
+        };
         return new CloudException(kind, $"TeraBox {path}: errno {errno}{hint}. {Trim(body)}");
     }
 

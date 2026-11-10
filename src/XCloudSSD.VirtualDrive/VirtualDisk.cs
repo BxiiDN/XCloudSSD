@@ -164,6 +164,9 @@ public sealed class VirtualDisk : IDisposable
         _log.LogError("{Letter}: {Message}", Account.DriveLetter, message);
     }
 
+    /// <summary>Part size for files on TeraBox (below the 4 GB per-file limit of free accounts).</summary>
+    public const string TeraBoxChunkSize = "3G";
+
     private async Task MountRcloneAsync(AppSettings settings, CancellationToken ct)
     {
         if (_rclone is { IsRunning: true }) return;
@@ -182,13 +185,16 @@ public sealed class VirtualDisk : IDisposable
                 password: BridgePassword?.Invoke(), preferredPort: port);
             bridge.Start();
             _db?.SetValue(portKey, bridge.Port.ToString(CultureInfo.InvariantCulture));
-            remote = new RcloneRemote("webdav", new Dictionary<string, string>
+            var webdav = new RcloneRemote("webdav", new Dictionary<string, string>
             {
                 ["url"] = bridge.Url,
                 ["vendor"] = "other",
                 ["user"] = bridge.User,
                 ["pass"] = RcloneObscure.Obscure(bridge.Password, deterministic: true),
             });
+            // TeraBox limits the size of one file (free: 4 GB, the upload is rejected only at the very end). Big game
+            // files are stored as 3 GiB parts with rclone's chunker and read back as one file.
+            remote = Provider.Kind == ProviderKind.TeraBox ? RcloneRemote.Chunked(webdav, TeraBoxChunkSize) : webdav;
         }
         var cacheDir = Path.Combine(settings.EffectiveCacheDirectory, Account.Id);
         var mount = new RcloneMount(new RcloneMountOptions

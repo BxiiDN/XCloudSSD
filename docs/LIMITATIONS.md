@@ -14,8 +14,10 @@
   dan cookie TeraBox tetap tersimpan terenkripsi DPAPI oleh XCloudSSD.
 * **TeraBox lewat rclone**: rclone resmi belum punya backend TeraBox (PR komunitas #8508 masih belum digabung dan
   bermasalah). XCloudSSD menyediakan jembatan WebDAV lokal di 127.0.0.1 (password acak tiap start) yang memakai
-  konektor TeraBox XCloudSSD; rclone memasangnya dengan backend `webdav` resmi. Akun gratis TeraBox tetap membatasi
-  satu file maks. 4 GB — file game yang lebih besar akan gagal diunggah ke TeraBox (data tetap aman di cache).
+  konektor TeraBox XCloudSSD; rclone memasangnya dengan backend `webdav` resmi. Akun gratis TeraBox membatasi satu
+  file maks. 4 GB; sejak v1.3.4 file yang lebih besar disimpan sebagai potongan 3 GiB (rclone `chunker`,
+  `nama.rclone_chunk.001`, …) dan tampil sebagai satu file di drive. Di aplikasi/web TeraBox potongan itu terlihat
+  terpisah dan tidak bisa dibuka satu per satu.
 * Waktu modifikasi file tidak disimpan di TeraBox (yang tampil adalah waktu upload).
 
 ## TeraBox — eksperimental, lewat antarmuka web (tidak resmi)

@@ -197,4 +197,16 @@ public class RcloneBridgeTests
     {
         Assert.Equal(held, RcloneMount.IsHeld(name, RcloneMountOptions.DefaultHoldFolders));
     }
+
+    [Fact]
+    public void ChunkedRemote_WrapsTheBridge_ThroughEnvironmentOnly()
+    {
+        var env = RcloneMount.BuildEnvironment(RcloneRemote.Chunked(
+            new RcloneRemote("webdav", new Dictionary<string, string> { ["url"] = "http://127.0.0.1:1/" }), "3G"));
+        Assert.Equal("chunker", env["RCLONE_CONFIG_XCS_TYPE"]);
+        Assert.Equal("xcsraw:", env["RCLONE_CONFIG_XCS_REMOTE"]);
+        Assert.Equal("3G", env["RCLONE_CONFIG_XCS_CHUNK_SIZE"]);
+        Assert.Equal("webdav", env["RCLONE_CONFIG_XCSRAW_TYPE"]);
+        Assert.Equal("http://127.0.0.1:1/", env["RCLONE_CONFIG_XCSRAW_URL"]);
+    }
 }

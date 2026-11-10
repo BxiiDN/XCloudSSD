@@ -15,7 +15,21 @@ using XCloudSSD.Transfer;
 namespace XCloudSSD.Rclone;
 
 /// <summary>An rclone remote defined only through environment variables (no rclone.conf on disk).</summary>
-public sealed record RcloneRemote(string Type, IReadOnlyDictionary<string, string> Options);
+public sealed record RcloneRemote(string Type, IReadOnlyDictionary<string, string> Options)
+{
+    /// <summary>
+    /// Optional remote this one wraps (e.g. chunker over webdav). It is defined as "&lt;name&gt;raw" and this remote's
+    /// "remote" option points to it.
+    /// </summary>
+    public RcloneRemote? Inner { get; init; }
+
+    /// <summary>
+    /// Splits files bigger than <paramref name="chunkSize"/> into parts (rclone's official "chunker" backend), so
+    /// providers with a per-file limit (TeraBox free: 4 GB) can store files of any size. Reading reassembles them.
+    /// </summary>
+    public static RcloneRemote Chunked(RcloneRemote inner, string chunkSize) =>
+        new("chunker", new Dictionary<string, string> { ["chunk_size"] = chunkSize, ["hash_type"] = "md5" }) { Inner = inner };
+}
 
 public sealed class RcloneMountOptions
 {
@@ -150,9 +164,15 @@ public sealed class RcloneMount : IDisposable
 
     internal static Dictionary<string, string> BuildEnvironment(RcloneRemote remote)
     {
-        var prefix = $"RCLONE_CONFIG_{RemoteName.ToUpperInvariant()}_";
-        var env = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { [prefix + "TYPE"] = remote.Type };
-        foreach (var (k, v) in remote.Options) env[prefix + k.ToUpperInvariant()] = v;
+        var env = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var name = RemoteName;
+        for (var r = remote; r is not null; r = r.Inner, name += "raw")
+        {
+            var prefix = $"RCLONE_CONFIG_{name.ToUpperInvariant()}_";
+            env[prefix + "TYPE"] = r.Type;
+            foreach (var (k, v) in r.Options) env[prefix + k.ToUpperInvariant()] = v;
+            if (r.Inner is not null) env[prefix + "REMOTE"] = name + "raw:";
+        }
         return env;
     }
 
@@ -463,7 +483,8 @@ public sealed class RcloneMount : IDisposable
                 _tracked[name] = h;
             }
             if (uploading && progress.TryGetValue(name, out var p)) h.Progress(p.Bytes, p.Size > 0 ? p.Size : size);
-            var state = uploading ? (tries > 0 ? TransferState.Retrying : TransferState.Uploading) : TransferState.Pending;
+            // rclone's own try counter; "Retrying" only while waiting for the next attempt.
+            var state = uploading ? TransferState.Uploading : tries > 0 ? TransferState.Retrying : TransferState.Pending;
             if (!uploading && IsHeld(name, _opt.HoldUploadsUnder))
             {
                 if (h.Snapshot().State != TransferState.Pending || h.Snapshot().Error is null)
@@ -471,6 +492,7 @@ public sealed class RcloneMount : IDisposable
                 continue;
             }
             if (h.Snapshot().State != state) h.SetState(state, tries > 0 ? Status?.LastError : null);
+            h.SetAttempts(tries);
         }
         foreach (var (name, h) in _tracked.ToList())
         {

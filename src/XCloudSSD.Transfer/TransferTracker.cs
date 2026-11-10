@@ -132,6 +132,12 @@ public sealed class TransferHandle
         if (persist is not null) _owner.Persist(persist);
     }
 
+    /// <summary>Sets the attempt count reported by the uploader itself (e.g. rclone's tries).</summary>
+    public void SetAttempts(int attempts)
+    {
+        lock (_lock) _dto.Attempts = Math.Max(0, attempts);
+    }
+
     public void SetPath(string path)
     {
         lock (_lock) _dto.Path = path;

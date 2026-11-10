@@ -24,7 +24,8 @@ public sealed class RcloneMountTests(ITestOutputHelper output) : IDisposable
             ? p
             : throw new InvalidOperationException("Set XCS_RCLONE_EXE to the bundled rclone.exe (CI downloads it).");
 
-    private (RcloneMount Mount, CloudWebDavServer Dav, TransferTracker Transfers) MountBridge(InMemoryCloudProvider cloud, char letter, int writeBack = 1)
+    private (RcloneMount Mount, CloudWebDavServer Dav, TransferTracker Transfers) MountBridge(InMemoryCloudProvider cloud, char letter, int writeBack = 1,
+        string? chunkSize = null)
     {
         var dav = new CloudWebDavServer(cloud, NullLogger.Instance, permanentDelete: true, listCacheTtl: TimeSpan.FromSeconds(1));
         dav.Start();
@@ -32,10 +33,10 @@ public sealed class RcloneMountTests(ITestOutputHelper output) : IDisposable
         var mount = new RcloneMount(new RcloneMountOptions
         {
             RcloneExe = RcloneExe,
-            Remote = new RcloneRemote("webdav", new Dictionary<string, string>
+            Remote = Wrap(new RcloneRemote("webdav", new Dictionary<string, string>
             {
                 ["url"] = dav.Url, ["vendor"] = "other", ["user"] = dav.User, ["pass"] = RcloneObscure.Obscure(dav.Password),
-            }),
+            }), chunkSize),
             DriveLetter = letter,
             VolumeLabel = "XCloudSSD TeraBox 01",
             CacheDir = Path.Combine(_work, "cache"),
@@ -47,6 +48,8 @@ public sealed class RcloneMountTests(ITestOutputHelper output) : IDisposable
         mount.StartAsync(CancellationToken.None).GetAwaiter().GetResult();
         return (mount, dav, transfers);
     }
+
+    private static RcloneRemote Wrap(RcloneRemote r, string? chunkSize) => chunkSize is null ? r : RcloneRemote.Chunked(r, chunkSize);
 
     private static void WaitForUploads(RcloneMount mount, TimeSpan timeout)
     {
@@ -160,6 +163,36 @@ public sealed class RcloneMountTests(ITestOutputHelper output) : IDisposable
             output.WriteLine($"uploaded {sw.ElapsedMilliseconds} ms after the move");
             Assert.Equal(data, cloud.ContentAt("/SteamLibrary/steamapps/common/Game/g00s001"));
             Assert.Null(cloud.ContentAt("/SteamLibrary/steamapps/downloading/1817190/g00s001"));
+        }
+        finally
+        {
+            mount.Stop(TimeSpan.FromSeconds(30));
+            mount.Dispose();
+            dav.Dispose();
+        }
+    }
+
+    [Fact]
+    public void FilesBiggerThanTheProviderLimit_AreStoredInParts_AndReadBackWhole()
+    {
+        // TeraBox free accounts reject files > 4 GB only after the whole upload; chunker keeps each stored file small.
+        var cloud = new InMemoryCloudProvider();
+        var letter = TestDisk.FreeLetter();
+        var (mount, dav, _) = MountBridge(cloud, letter, chunkSize: "16M");
+        try
+        {
+            var data = RandomNumberGenerator.GetBytes(40 << 20);
+            var dir = $"{letter}:\\SteamLibrary\\steamapps\\common\\Game";
+            Directory.CreateDirectory(dir);
+            File.WriteAllBytes(Path.Combine(dir, "movie2.cpk"), data);
+            WaitForUploads(mount, TimeSpan.FromMinutes(2));
+
+            var parts = Enumerable.Range(1, 3).Select(i => cloud.ContentAt($"/SteamLibrary/steamapps/common/Game/movie2.cpk.rclone_chunk.{i:000}")).ToList();
+            Assert.All(parts, p => Assert.NotNull(p));
+            Assert.All(parts, p => Assert.True(p!.Length <= 16 << 20));
+            Assert.Equal(data, parts.SelectMany(p => p!).ToArray());
+            Assert.Single(Directory.GetFiles(dir)); // Explorer still shows one file
+            Assert.Equal(data.Length, new FileInfo(Path.Combine(dir, "movie2.cpk")).Length);
         }
         finally
         {
