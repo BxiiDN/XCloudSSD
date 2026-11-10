@@ -65,6 +65,7 @@ public static class Retry
         403 when reason is "userRateLimitExceeded" or "rateLimitExceeded" => CloudErrorKind.RateLimited,
         403 => CloudErrorKind.Forbidden,
         404 => CloudErrorKind.NotFound,
+        408 => CloudErrorKind.Timeout,
         409 => CloudErrorKind.Conflict,
         412 => CloudErrorKind.Conflict,
         416 => CloudErrorKind.Unknown,

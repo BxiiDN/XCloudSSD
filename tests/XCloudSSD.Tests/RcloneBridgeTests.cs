@@ -185,4 +185,16 @@ public class RcloneBridgeTests
             Directory.Delete(root, true);
         }
     }
+
+    [Theory]
+    [InlineData("SteamLibrary/steamapps/downloading/1817190/asset_archive/g00s001", true)]
+    [InlineData("SteamLibrary/steamapps/temp/1817190/x.bin", true)]
+    [InlineData("SteamLibrary/steamapps/workshop/downloads/1/a.pak", true)]
+    [InlineData("SteamLibrary/steamapps/common/Marvel's Spider-Man Miles Morales/MilesMorales.exe", false)]
+    [InlineData("SteamLibrary/steamapps/appmanifest_1817190.acf", false)]
+    [InlineData("Games/downloading/file.bin", false)]
+    public void SteamStagingFiles_WaitInTheCache(string name, bool held)
+    {
+        Assert.Equal(held, RcloneMount.IsHeld(name, RcloneMountOptions.DefaultHoldFolders));
+    }
 }

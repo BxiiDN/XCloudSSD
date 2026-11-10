@@ -55,6 +55,14 @@ public sealed class AppSettings
             Engine = MountEngine.Rclone;
             SettingsVersion = 3;
         }
+        if (SettingsVersion < 4)
+        {
+            // v1.3.3: start uploads after a file has been quiet for a minute (fewer cancelled/restarted uploads while a
+            // launcher is still writing) and fewer parallel uploads (slow uplinks timed out TeraBox parts).
+            if (WriteBackSeconds == 5) WriteBackSeconds = 60;
+            if (RcloneTransfers == 4) RcloneTransfers = 3;
+            SettingsVersion = 4;
+        }
     }
 
     /// <summary>What mounts the drives: rclone with a local VFS cache (default) or XCloudSSD's own RAM-only filesystem.</summary>
@@ -68,9 +76,9 @@ public sealed class AppSettings
     /// <summary>Uploaded files stay cached this long after their last use.</summary>
     public int CacheMaxAgeHours { get; set; } = 168;
     /// <summary>Seconds after a file is closed before its upload starts.</summary>
-    public int WriteBackSeconds { get; set; } = 5;
+    public int WriteBackSeconds { get; set; } = 60;
     /// <summary>Parallel uploads per drive.</summary>
-    public int RcloneTransfers { get; set; } = 4;
+    public int RcloneTransfers { get; set; } = 3;
 
     public static string DefaultCacheDirectory =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "XCloudSSD", "Cache");

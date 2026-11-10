@@ -138,6 +138,38 @@ public sealed class RcloneMountTests(ITestOutputHelper output) : IDisposable
     }
 
     [Fact]
+    public void SteamDownloadingFolder_IsNotUploaded_UntilSteamMovesTheFile()
+    {
+        var cloud = new InMemoryCloudProvider();
+        var letter = TestDisk.FreeLetter();
+        var (mount, dav, _) = MountBridge(cloud, letter);
+        try
+        {
+            var staging = $"{letter}:\\SteamLibrary\\steamapps\\downloading\\1817190";
+            var final = $"{letter}:\\SteamLibrary\\steamapps\\common\\Game";
+            Directory.CreateDirectory(staging);
+            Directory.CreateDirectory(final);
+            var data = RandomNumberGenerator.GetBytes(2 << 20);
+            File.WriteAllBytes(Path.Combine(staging, "g00s001"), data);
+            Thread.Sleep(8000); // write-back delay is 1 s: an ordinary file would be uploaded by now
+            Assert.Null(cloud.ContentAt("/SteamLibrary/steamapps/downloading/1817190/g00s001"));
+
+            File.Move(Path.Combine(staging, "g00s001"), Path.Combine(final, "g00s001"));
+            var sw = Stopwatch.StartNew();
+            while (cloud.ContentAt("/SteamLibrary/steamapps/common/Game/g00s001") is null && sw.Elapsed < TimeSpan.FromSeconds(60)) Thread.Sleep(250);
+            output.WriteLine($"uploaded {sw.ElapsedMilliseconds} ms after the move");
+            Assert.Equal(data, cloud.ContentAt("/SteamLibrary/steamapps/common/Game/g00s001"));
+            Assert.Null(cloud.ContentAt("/SteamLibrary/steamapps/downloading/1817190/g00s001"));
+        }
+        finally
+        {
+            mount.Stop(TimeSpan.FromSeconds(30));
+            mount.Dispose();
+            dav.Dispose();
+        }
+    }
+
+    [Fact]
     public void FilesWaitingInTheCache_AreUploadedAfterARestart()
     {
         var cloud = new InMemoryCloudProvider();

@@ -28,8 +28,8 @@ public sealed class RcloneMountOptions
     public int CacheMaxGB { get; init; } = 100;
     public int CacheMinFreeGB { get; init; } = 10;
     public int CacheMaxAgeHours { get; init; } = 168;
-    public int WriteBackSeconds { get; init; } = 5;
-    public int Transfers { get; init; } = 4;
+    public int WriteBackSeconds { get; init; } = 60;
+    public int Transfers { get; init; } = 3;
     public int DirCacheSeconds { get; init; } = 60;
     /// <summary>Change polling (Google Drive). 0 = provider has no change feed.</summary>
     public int PollSeconds { get; init; }
@@ -37,6 +37,15 @@ public sealed class RcloneMountOptions
     public int UploadLimitKBps { get; init; }
     public int DownloadLimitKBps { get; init; }
     public IReadOnlyList<string> ExtraArgs { get; init; } = [];
+    /// <summary>
+    /// Folders where launchers stage downloads and then move the finished files away (Steam "downloading"/"temp").
+    /// Uploading from there is wasted: every new write or the final move cancels the upload and starts it again.
+    /// Files there wait in the cache; once moved to their final folder they upload normally.
+    /// </summary>
+    public IReadOnlyList<string> HoldUploadsUnder { get; init; } = DefaultHoldFolders;
+
+    public static readonly IReadOnlyList<string> DefaultHoldFolders =
+        ["steamapps/downloading/", "steamapps/temp/", "steamapps/workshop/downloads/", "steamapps/workshop/temp/"];
 }
 
 /// <summary>Live state of the rclone VFS cache and upload queue, read from rclone's remote-control API.</summary>
@@ -387,10 +396,52 @@ public sealed class RcloneMount : IDisposable
     }
 
     /// <summary>Mirrors rclone's upload queue into the Transfer Manager.</summary>
+    internal static bool IsHeld(string name, IReadOnlyList<string> folders) =>
+        folders.Any(f => ("/" + name.Replace('\\', '/')).Contains("/" + f, StringComparison.OrdinalIgnoreCase));
+
+    private readonly HashSet<long> _held = new();
+
+    /// <summary>Keeps launcher staging files waiting in the cache; releases them as soon as they get their final name.</summary>
+    private async Task HoldStagingUploadsAsync(JsonArray queue, CancellationToken ct)
+    {
+        foreach (var q in queue.OfType<JsonObject>())
+        {
+            var name = q["name"]?.GetValue<string>();
+            if (name is null || q["id"] is not JsonValue idv || !idv.TryGetValue<double>(out var idd)) continue;
+            var id = (long)idd;
+            var uploading = q["uploading"]?.GetValue<bool>() ?? false;
+            var expiry = q["expiry"]?.GetValue<double>() ?? 0;
+            if (uploading) continue;
+            double? newExpiry = null;
+            if (IsHeld(name, _opt.HoldUploadsUnder))
+            {
+                if (expiry < 1800) newExpiry = 3600;
+                _held.Add(id);
+            }
+            else if (_held.Remove(id) && expiry > Math.Max(5, _opt.WriteBackSeconds))
+            {
+                newExpiry = Math.Max(1, _opt.WriteBackSeconds); // moved out of the staging folder: upload soon
+            }
+            if (newExpiry is { } e)
+                await RcAsync("vfs/queue-set-expiry", ct, new JsonObject { ["id"] = id, ["expiry"] = e }).ConfigureAwait(false);
+        }
+    }
+
     private async Task SyncTransfersAsync(JsonObject? stats, CancellationToken ct)
     {
-        if (_transfers is null) return;
         var queue = (await RcAsync("vfs/queue", ct).ConfigureAwait(false))?["queue"] as JsonArray ?? [];
+        if (_opt.HoldUploadsUnder.Count > 0)
+        {
+            try
+            {
+                await HoldStagingUploadsAsync(queue, ct).ConfigureAwait(false);
+            }
+            catch (InvalidOperationException ex)
+            {
+                _log.LogDebug("vfs/queue-set-expiry: {Message}", ex.Message);
+            }
+        }
+        if (_transfers is null) return;
         var progress = new Dictionary<string, (long Bytes, long Size)>(StringComparer.Ordinal);
         if (stats?["transferring"] is JsonArray active)
             foreach (var t in active.OfType<JsonObject>())
@@ -413,6 +464,12 @@ public sealed class RcloneMount : IDisposable
             }
             if (uploading && progress.TryGetValue(name, out var p)) h.Progress(p.Bytes, p.Size > 0 ? p.Size : size);
             var state = uploading ? (tries > 0 ? TransferState.Retrying : TransferState.Uploading) : TransferState.Pending;
+            if (!uploading && IsHeld(name, _opt.HoldUploadsUnder))
+            {
+                if (h.Snapshot().State != TransferState.Pending || h.Snapshot().Error is null)
+                    h.SetState(TransferState.Pending, "Waiting in the local cache until the launcher finishes this download (then uploaded from its final folder).");
+                continue;
+            }
             if (h.Snapshot().State != state) h.SetState(state, tries > 0 ? Status?.LastError : null);
         }
         foreach (var (name, h) in _tracked.ToList())
